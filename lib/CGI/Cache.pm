@@ -10,7 +10,7 @@ use Cache::SizeAwareFileCache;
 use Tie::Restore;
 use Storable qw( freeze );
 
-$VERSION = '1.41.2';
+$VERSION = sprintf "%d.%02d%02d", q/1.41.40/ =~ /(\d+)/g;
 
 # --------------------------------------------------------------------------
 

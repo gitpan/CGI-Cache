@@ -8,15 +8,23 @@ README
 lib/CGI/Cache.pm
 
 # Tests
-t/01-basic.t
+t/basic.t
+t/buffer.t
+t/cgi_carp.t
+t/disabled_ouput.t
+t/invalidate_cache_entry.t
+t/non-caching.t
+t/pause_continue.t
+t/stop.t
+t/Test/Utils.pm
+t/timed_tests.t
+t/user_specified_filehandle.t
 
 # Module::Install extensions
 inc/ExtUtils/AutoInstall.pm
-inc/File/HomeDir.pm
 inc/Module/Install/AutoInstall.pm
 inc/Module/Install/Base.pm
 inc/Module/Install/Can.pm
-inc/Module/Install/CustomInstallationPath.pm
 inc/Module/Install/Fetch.pm
 inc/Module/Install/Include.pm
 inc/Module/Install/Makefile.pm
@@ -24,5 +32,7 @@ inc/Module/Install/Metadata.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
 inc/Module/Install.pm
+inc/Test/Builder.pm
+inc/Test/More.pm
 
 META.yml                                Module meta-data (added by MakeMaker)

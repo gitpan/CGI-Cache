@@ -1,8 +1,46 @@
 use ExtUtils::MakeMaker;
+
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
+
+if (eval "require CGI::Cache" && $CGI::Cache::VERSION <= 1.00)
+{
+  print <<EOF;
+WARNING!
+
+The interface to CGI::Cache has changed substantially in this version. Any
+scripts developed using previous versions CGI::Cache will NOT work.
+
+Do you want to continue installing CGI::Cache?
+EOF
+
+  my $answer;
+  do
+  {
+    $answer = <STDIN>;
+  } until $answer =~ /^[yn]/i;
+
+  exit 1 if $answer =~ /^n/i;
+}
+
+# Have to do this because MakeMaker and POSIX collide because someone used
+# @EXPORT when they should have used @EXPORT_OK. See
+# http://www.deja.com/=dnt_mn/getdoc.xp?AN=469218990&fmt=text
+unless (eval "require POSIX")
+{
+  print "Warning: prerequisite POSIX 0 not found\n";
+}
+
+
 WriteMakefile(
     'NAME'	=> 'CGI::Cache',
     'VERSION_FROM' => 'Cache.pm', # finds $VERSION
-    'PREREQ_PM'   => { 'File::Cache' => 0, 'LWP' => 0 }
+    'PREREQ_PM' => { 'File::Path' => 0,
+                     'File::Spec' => 0,
+                     'File::Spec::Functions' => 0,
+                     'File::Cache' => 0,
+                     'Storable' => 0,
+                     'IO::File' => 0,
+    },
+
 );

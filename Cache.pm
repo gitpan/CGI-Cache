@@ -1,173 +1,510 @@
 package CGI::Cache;
 
 use strict;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $DEBUG);
+use vars qw( $VERSION );
 
-require Exporter;
+use File::Path;
+use File::Spec;
+use File::Spec::Functions qw( tmpdir );
+use File::Cache;
+use Storable qw (freeze);
 
-@ISA = qw(Exporter AutoLoader);
-# Items to export into callers namespace by default. Note: do not export
-# names by default without a very good reason. Use EXPORT_OK instead.
-# Do not simply export all your public functions/methods/constants.
-@EXPORT = qw(
-	
-);
-$VERSION = '0.01';
+$VERSION = '1.01';
 
+# --------------------------------------------------------------------------
 
-# Preloaded methods go here.
-sub Serve ($\%\%) {
-  my ($class,$cgi_cache,$file_cache_args)=@_;
+# Globals
+use vars qw( $CAPTURE_STARTED $CACHE_KEY $ROOT_DIR $TIME_TO_LIVE $MODE
+             $CACHE $CAPTURED_OUTPUT $DEFAULT_CACHE_KEY $CACHE_PATH 
+             $WROTE_TO_STDERR );
 
-  use Data::Dumper;
+# 1 indicates that STDOUT is being captured
+$CAPTURE_STARTED = 0;
 
-  warn Data::Dumper->Dump([$cgi_cache,$file_cache_args],['cgi_cache','file_cache_args']);
+# The cache key
+$CACHE_KEY = undef;
 
-  use CGI;
-  use File::Cache;
-  my $cgi=new CGI;
-  
-  my $cache = new File::Cache ($file_cache_args);
-  
-  warn $cgi_cache->{key};
-  my $pregen_html = $cache->get($cgi_cache->{key});
-  
-  if ($pregen_html) {
-    print $cgi->header, $cgi->start_html, $pregen_html, $cgi->end_html;
-    warn "PRINTING pre-gen HTML" if $DEBUG;
-    exit;
-  } else {
-    use LWP::UserAgent;
-    use HTTP::Request::Common qw(POST GET);
-    my $ua = new LWP::UserAgent;
-    my $req = POST $cgi_cache->{url}, { %{$cgi_cache->{fdat}}, 'force_gen' => 1 };
-    my $res = $ua->request($req);
-    if ($res->is_success()) {
-      warn "POST was successful." if $DEBUG;
-      my $generated_html = $res->content();
-      $cache->set($cgi_cache->{key}, $generated_html);
-      print $cgi->header, $cgi->start_html, $generated_html, $cgi->end_html;
-      exit;
-    } else {
-      my $request_string = $req->as_string;
-      my $vardump=Data::Dumper->Dump([$cgi_cache,$file_cache_args],['cgi_cache','file_cache_args']);
-      my $error_msg = $res->as_string;
-      my $date = `date`; chomp($date);
-      my $error = "
+# The directory in which the cache resides
+$ROOT_DIR = undef;
 
-<h1>Error ($date)</h1>
-There was no cached page for $vardump posting as <i>$request_string</i>
-<P>
-Also, we could not dynamically generate a page. Here is the error:
-<b>$error_msg</b>
-";
-      
-      if ($cgi_cache->{display_error}) {
-	print $cgi->header, $cgi->start_html, $error, $cgi->end_html;
-      } else {
-	open T, ">/tmp/cgi-cache-error.html";
-	print T $cgi->header, $cgi->start_html, $error, $cgi->end_html;
-	close(T);
-	print $cgi->redirect($ENV{HTTP_REFERER});
-      }
-      exit;
-    }
+# The default amount of time the cache entry is to live
+$TIME_TO_LIVE = undef;
+
+# The default mode for cache entries
+$MODE = undef;
+
+# The cache
+$CACHE = undef;
+
+# The temporarily stored STDOUT
+$CAPTURED_OUTPUT;
+
+# The default cache key. (Actually concatenated with location of temp
+# dir.)
+$DEFAULT_CACHE_KEY = 'CGI_Cache';
+
+# The default cache key. (Actually concatenated with location of temp
+# dir.)
+$CACHE_PATH = '';
+
+# Used to determine if there was an error in the script that caused it to
+# write to STDERR
+$WROTE_TO_STDERR = 0;
+
+# --------------------------------------------------------------------------
+
+# This end block ensures that the captured STDOUT will be written to a
+# file if the CGI script exits before calling stop(). However, stop()
+# will not automatically be called if the script is exiting via a die
+# (detected by $? == 2).
+
+END
+{
+  return unless $CAPTURE_STARTED;
+
+  # Unfortunately, die() writes to STDERR in a magical way that doesn't allow
+  # us to catch it. In this case we check $? for an error code.
+  if ($WROTE_TO_STDERR || $? == 2)
+  {
+    stop(0);
+  }
+  else
+  {
+    stop(1);
   }
 }
 
+# --------------------------------------------------------------------------
 
-# Autoload methods go after =cut, and are processed by the autosplit program.
+# Initialize the cache
+
+sub setup
+{
+  my $options = shift;
+
+  $options = _set_defaults($options);
+
+  $CACHE = new File::Cache($options);
+
+  die "File::Cache::new failed\n" unless defined $CACHE;
+
+  return 1;
+}
+
+# --------------------------------------------------------------------------
+
+sub _set_defaults
+{
+  my $options = shift;
+
+  # Set default value for namespace
+  unless (defined $options->{namespace})
+  {
+    # Script name may not be defined if we are running in off-line mode
+    if (defined $ENV{SCRIPT_NAME})
+    {
+      (undef,undef,$options->{namespace}) =
+        File::Spec->splitpath($ENV{SCRIPT_NAME},0);
+    }
+    else
+    {
+      (undef,undef,$options->{namespace}) =
+        File::Spec->splitpath($0,0);
+    }
+  }
+
+  # Set default value for expires_in
+  $options->{expires_in} = 24 * 60 * 60
+    unless defined $options->{expires_in};
+
+
+  # Set default value for cache key
+  unless (defined $options->{cache_key})
+  {
+    my $tmpdir = tmpdir() or
+      die("No tmpdir on this system.  Bugs to the authors of File::Spec");
+
+    $CACHE_PATH = File::Spec->catfile($tmpdir, $DEFAULT_CACHE_KEY);
+
+    $options->{cache_key} = $CACHE_PATH;
+  }
+
+
+  # Set default value for username
+  $options->{username} = "" unless defined $options->{username};
+
+  # Set default value for max_size
+  $options->{max_size} = $File::Cache::sNO_MAX_SIZE;
+
+  return $options;
+}
+
+# --------------------------------------------------------------------------
+
+sub set_key
+{
+	my $key = \@_;
+
+  $Storable::canonical = 'true';
+
+  $CACHE_KEY = freeze $key;
+
+	return 1;
+}
+
+# --------------------------------------------------------------------------
+
+sub start
+{
+  # First see if a cached file already exists
+  my $cached_output = $CACHE->get($CACHE_KEY);
+
+  if (defined $cached_output)
+  {
+    print $cached_output;
+    exit 0;
+  }
+  else
+  {
+    #	Copy STDOUT to a variable for caching later.
+    tie (*STDOUT,'CGI::Cache::CatchSTDOUT');
+
+    #	Monitor STDERR to see if the script has any problems
+    tie (*STDERR,'CGI::Cache::MonitorSTDERR');
+
+    $CAPTURE_STARTED = 1;
+  }
+
+	1;
+}
+
+# --------------------------------------------------------------------------
+
+sub stop
+{
+	return 0 unless ($CAPTURE_STARTED);
+
+	my $dump = shift;
+
+	#	See if we need to cache the results
+	$dump = 1 unless defined $dump;
+
+	#	Stop storing output and restore STDOUT
+  untie *STDOUT;
+  untie *STDERR;
+	$CAPTURE_STARTED = 0;
+
+	#	Cache the saved STDOUT if necessary
+	$CACHE->set($CACHE_KEY,$CAPTURED_OUTPUT) if $dump;
+
+	1;
+}
+
+# --------------------------------------------------------------------------
+
+package CGI::Cache::CatchSTDOUT;
+
+# These functions are for tie'ing the STDOUT filehandle
+
+sub TIEHANDLE
+{
+  my $package = shift;
+
+  return bless {},$package;
+}
+
+sub WRITE
+{
+  my($r, $buff, $length, $offset) = @_;
+
+  my $send = substr($buff, $offset, $length);
+  print $send;
+}
+
+sub PRINT
+{
+  my $r = shift;
+
+  # Temporarily untie the filehandle so that we won't recursively call
+  # ourselves
+  untie *STDOUT;
+  $CGI::Cache::CAPTURED_OUTPUT .= join '', @_;
+  print @_;
+  tie *STDOUT,__PACKAGE__;
+}
+
+sub PRINTF
+{
+  my $r = shift;
+  my $fmt = shift;
+
+  print sprintf($fmt, @_);
+}
 
 1;
+
+# --------------------------------------------------------------------------
+
+package CGI::Cache::MonitorSTDERR;
+
+# These functions are for tie'ing the STDERR filehandle
+
+sub TIEHANDLE
+{
+  my $package = shift;
+
+  return bless {},$package;
+}
+
+sub WRITE
+{
+  my($r, $buff, $length, $offset) = @_;
+
+  my $send = substr($buff, $offset, $length);
+  print $send;
+}
+
+sub PRINT
+{
+  my $r = shift;
+
+  # Temporarily untie the filehandle so that we won't recursively call
+  # ourselves
+  untie *STDERR;
+  print STDERR @_;
+  tie *STDERR,__PACKAGE__;
+
+  $CGI::Cache::WROTE_TO_STDERR = 1;
+}
+
+sub PRINTF
+{
+  my $r = shift;
+  my $fmt = shift;
+
+  print sprintf($fmt, @_);
+}
+
+1;
+
+# --------------------------------------------------------------------------
+
+package CGI::Cache;
+
+1;
+
 __END__
-# Below is the stub of documentation for your module. You better edit it!
+
+# --------------------------------------------------------------------------
 
 =head1 NAME
 
-CGI::Cache - facility for caching the results of CGI scripts
+CGI::Cache - Perl extension to help cache output of time-intensive CGI
+scripts so that subsequent visits to such scripts will not cost as
+much time.
+
+=head1 WARNING
+
+The interface as of version 1.01 has changed considerably and is NOT
+compatible with earlier versions.
 
 =head1 SYNOPSIS
 
- # unless the query string to this CGI script explicitly says
- # do not look for pre-generated HTML, lets try to find pregen HTML
- unless ($cgi->param('force_gen')) { 
- # unless ($formdata{force_gen}) { 
-
-  # --------------------------------------------------
-  # Caching and Serving of Pre-processed results
-  # --------------------------------------------------
-
+  use CGI;
   use CGI::Cache;
-  CGI::Cache->Serve
-    (
-     {
-      'url'         => 'http://www.angryman.com/cgi-bin/vote/votesearcher.cgi',
-      'key'         => $formdata{issueid},
-      'display_error'=> 0,
-      'fdat'        => \%formdata
-     },
-     {
-      'namespace'  => 'votesearcher.cgi', 
-      'expires_in' => 60*10  # 10 minutes till next re-gen
-     }
-    );
-  
-  # CGI::Cache->Serve() exits the CGI script here
 
- }
+  my $query = new CGI;
 
- # ... the rest of the script is here... and will only run when
- # the query string has explicitly required forced HTML generation.
+  # Set up a cache in /tmp/CGI_Cache/demo_cgi, with publicly read/writable
+  # cache entries, a maximum size of 20 megabytes, and a time-to-live of 6
+  # hours.
+  CGI::Cache::setup( { cache_key => '/tmp/CGI_Cache',
+                       namespace => 'demo_cgi',
+                       filemode => 0666,
+                       max_size => 20 * 1024 * 1024,
+                       expires_in => 6 * 60 * 60,
+                     } );
+
+  CGI::Cache::set_key($query->Vars);
+  CGI::Cache::start();
+
+  print "Content-type: text/html\n\n";
+
+  print <<EOF;
+  This prints to STDOUT, which will be cached.
+  If the next visit is within 6 hours, the cached STDOUT
+  will be served instead of executing these 'prints'.
+  EOF
+
 
 =head1 DESCRIPTION
 
-CGI::Cache caches the results of cgi scripts so that whatever
-time-intensive actions they are engaging in (usually database access)
-can be reduced. The first call to the script with CGI::Cache functionality is 
-just as slow as the script normally is. The only difference is that the
-results of this execution are automatically stored away in a file cache so
-that the next call to the script I<with the same key> within the file cache
-expiry time will serve the page that was generated the last time.  
+This module is intended to be used in a CGI script that may
+benefit from caching its output. Some CGI scripts may take
+longer to execute because the data needed in order to construct
+the page may not be readily available. Such a script may need to
+query a remote database, or may rely on data that doesn't arrive
+in a timely fashion, or it may just be computationally intensive.
+Nonetheless, if you can afford the tradeoff of showing older,
+cached data vs. CGI execution time, then this module will perform
+that function.
 
-F<eg/votesearcher.cgi> shows an example of adding caching facility to a
-normally slow cgi script.
+This module was written such that any existing CGI code could benefit
+from caching without really changing any of existing CGI code guts.
+The CGI script can do just what it has always done, that is, construct
+an html page and print it to the STDOUT file descriptor, then exit.
+What you'll do in order to cache pages is include the module, specify
+some cache options and the cache key, and then call start() to begin
+caching output.
 
-The only function of CGI::Cache, Serve(), takes two hash references as
-its arguments. The first hashref configures CGI::Cache and the second
-argument is passed untouched to File::Cache. The first hashref can take four
-arguments, three of which are required:
+Internally, the CGI::Cache module ties the STDOUT file descriptor to
+an internal variable to which all output to STDOUT is saved. When the
+user calls stop() (or the END{} block of CGI::Cache is executed during
+script shutdown) the contents of the variable are inserted into the
+cache using the cache key the user specified earlier with set_key().
+
+Once a page has been cached in this fashion, then a subsequent visit
+to that CGI script will check for an existing cache entry for the
+given key before continuing through the code. If the file exists, then
+the cache file's content is printed to the real STDOUT and the process
+exits before executing the regular CGI code.
+
+=head2 CHOOSING A CACHE KEY
+
+The cache key is used by CGI::Cache to determine when cached
+output can be used. The key should be a unique data structure
+that fully describes the execution of the script. Conveniently,
+CGI::Cache can take the CGI module's parameters (using
+CGI::Vars) as the key. However, in some cases you may want to
+specially construct the key.
+
+For example, say we have a CGI script "airport" that computes the
+number of miles between major airports. You supply two airport codes
+to the script and it builds a web pages that reports the number of
+miles by air between those two locations. In addition, there is a
+third parameter which tells the script whether to write debugging
+information to a log file. Suppose the URL for Indianapolis Int'l to
+Chicago O'Hare looked like:
+
+	http://www.some.machine/cgi/airport?from=IND&to=ORD&debug=1
+
+We might want to remove the debug parameter because the output from
+the user's perspective is the same regardless of whether a log file is
+written:
+
+  my $params = $query->Vars;
+  delete $params->{'debug'};
+  CGI::Cache::set_key($params);
+  CGI::Cache::start();
+
+=head2 THE CGI::CACHE ROUTINES
 
 =over 4
 
-=item * url - the URL of the CGI script you want cached results for. 
+=item setup( \%options );
 
-=item * fdat - the form data to post to the CGI script
+Sets up the cache. The parameters are the same as the parameters for
+the File::Cache module's new() method, with the same defaults. Below
+is a brief overview of the options and their defaults. This overview
+may be out of date with your version of File::Cache. Consult I<perldoc
+File::Cache> for more accurate information.
 
-=item * key - a unique key on which to cache this invocation of the
-CGI script. It will usually be a value posted to the CGI script. 
-For example, if you have a script which is outputting a person's schedule, then
-you might key the CGI caching on the person's username, since this will be 
-unique.
+=over 4
 
-=item * display_error (OPTIONAL) - tells CGI::Cache what to do in the
-event of that the attempt to serve a page (cached or not) is
-unsuccessful. If 0, then an error message is written to
-/tmp/cgi-cache-error.html and the browser is redirected to the
-C<$ENV{HTTP_REFERER}>.  However if C<display_error> is set to a true
-value, then the error message will be served to the browser. 
+=item $options{cache_key}
+
+The cache_key is the location of the cache. Here cache_key is used in keeping
+with the terminology used by File::Cache, and is different from the key
+referred to in set_key below.
+
+=item $options{namespace}
+
+Namespaces provide isolation between cache objects. It is recommended
+that you use a namespace that is unique to your script. That way you
+can have multiple scripts whose output is cached by CGI::Cache, and
+they will not collide. This value defaults to a subdirectory of your
+temp directory whose name matches the name of your script (as reported
+by $ENV{SCRIPT_NAME}, or $0 if $ENV{SCRIPT_NAME} is not defined).
+
+=item $options{expires_in}
+
+If the "expires_in" option is set, all objects in this cache will be
+cleared after that number of seconds. If expires_in is not set, the
+web pages will never expire. The default is 24 hours.
+
+=item $options{cache_key}
+
+The "cache_key" is used to determine the underlying filesystem
+namespace to use. Leaving this unset will cause the cache to be
+created in a subdirectory of your temporary directory called
+CGI_Cache. (The term "key" here is a bit misleading in light of the
+usage of the term earlier--this is really the path to the cache.)
+
+=item $options{max_size}
+
+"max_size" specifies the maximum size of the cache, in bytes.  Cache
+objects are removed during the set() operation in order to reduce the
+cache size before the new cache value is added. The max_size will be
+maintained regardless of the value of auto_remove_stale. The default
+size is unlimited.
 
 =back
+
+
+=item set_key ( <data> );
+
+set_key takes any type of data (e.g. a list, a string, a reference to
+a complex data structure, etc.) and uses it to create a unique key to
+use when caching the script's output.
+
+
+=item start();
+
+Could you guess that the start() routine is what does all the work? It
+is this call that actually looks for an existing cache file, returning
+its content if it exists, then exits. If the cache file does not exist,
+then it captures the STDOUT filehandle and allows the CGI script's normal
+STDOUT be redirected to the cache file.
+
+=item stop( [<dump> = 1] );
+	  <dump>      - do we dump the the cache file to STDOUT?
+
+The stop() routine tells us to stop capturing STDOUT to the cache file.
+The cache file is closed and the file descriptor for STDOUT is restored
+to normal. The argument "dump" tells us whether or not to dump what has
+been captured in the cache file to the real STDOUT. By default this
+argument is 1, since this is usually what we want to do. In an error
+condition, however, we may want to cease caching and not print any of
+it to STDOUT. A dump argument of 0 is used in this case.
+
+You don't have to call the stop() routine if you simply want to catch
+all STDOUT that the script generates for the duration of its
+execution.  If the script exits without calling stop(), then the END{}
+block of the module will check to see of stop() has been called, and
+if not, it will call it. Note that CGI::Cache will detect whether your
+script is exiting as the result of an error, and will B<not> cache
+the output in this case.
+
+=back
+
+=head1 BUGS
+
+Contact david@coppit.org for bug reports and suggestions.
 
 =head1 AUTHOR
 
-T.M. Brannon <TBONE@cpan.org>
+The original code (written before October 1, 2000) was written by Broc
+Seib, and is copyright (c) 1998 Broc Seib. All rights reserved. 
+
+Maintenance of CGI::Cache is now being done by David Coppit
+(david@coppit.org).
+
+This program is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
-=over 4
-
-=item * File::Cache (CPAN id: DCLINTON)
-
-=back
+ File::Cache
+ perldoc -f open
 
 =cut

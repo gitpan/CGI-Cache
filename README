@@ -1,0 +1,71 @@
+CGI::Cache 1.01
+
+Perl extension to help cache output of time- intensive CGI scripts so that
+subsequent visits to such scripts will not cost as much time.
+
+
+WARNING! The interface in version 1.01 is incompatible with the interface of
+version 1.00 and earlier. You will need to modify any existing scripts you
+have to use the new interface if you install this version.
+
+
+INSTALLATION
+
+To install this package, change to the directory where you
+unarchived this distribution and type the following:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+During the 'make test', there are some tests that take a while
+longer to run. While testing that caching is working, CPU times
+are being recorded on some badly written code to see that
+performance will actually be increased on subsequent visits.
+Don't panic. It may take a couple of minutes to run, depending
+on your system.
+
+If you do not have root access on your machine, then you may
+not have the ability to install this module in the standard
+perl library path. You may direct the installation into your
+own space, e.g.,
+
+	perl Makefile.PL LIB='/home/userid/lib'
+
+or perhaps the entire installation, e.g.,
+
+	perl Makefile.PL PREFIX='/home/userid'
+
+If you make the installation into your own directory, then
+remember that you must tell perl where to search for modules
+before trying to 'use' them. For example:
+
+	use lib '/home/userid/lib';
+	use CGI::Cache;
+
+
+AVAILABILITY
+
+The most current version of this module should be available
+at your favorite CPAN site, or may be retrieved from
+  http://www.cs.virginia.edu/~dwc3q/code/
+
+
+COPYRIGHT
+
+Copyright (c) 1998-Sep 1 2000 Broc Seib. All rights reserved. This program
+is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
+
+
+NOTES
+
+Please let me know if you are using this module. Tell me what
+bugs you find or what can be done to improve it.
+
+
+AUTHOR
+
+David Coppit, david@coppit.org (current maintainer)
+Broc Seib, bseib@purdue.edu (original author)

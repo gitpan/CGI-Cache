@@ -1,5 +1,16 @@
 Revision history for Perl extension CGI::Cache.
 
+1.30 Thu Sep 26 13:01:32 EDT 2002
+- Added enable_output feature. (Feature request from Theo Petersen
+  <theo@summitdesign.net>.)
+- Verified SpeedyCGI compatibility. (Impetus from Theo Petersen
+  <theo@summitdesign.net>.)
+- Added a new section on use in persistent environments. (Impetus from Theo
+  Petersen <theo@summitdesign.net>.)
+- Corrected tie, tied, and untie syntax--apparently not a bug, although it
+  should have been. (Thanks to Benjamin Goldberg <goldbb2@earthlink.net> for
+  the suggestion.)
+
 1.21 Mon Feb 11 16:37:40 EST 2002
 - Fixed a documentation bug in the synopsis. (Thanks to Ken
   <mitch@monger.net> for the report.)

@@ -9,13 +9,13 @@ use File::Spec::Functions qw( tmpdir );
 use Cache::SizeAwareFileCache;
 use Storable qw( freeze );
 
-$VERSION = '1.21';
+$VERSION = '1.30';
 
 # --------------------------------------------------------------------------
 
 # Global because CatchSTDOUT and CatchSTDERR need them
 use vars qw( $THE_CAPTURED_OUTPUT $OUTPUT_HANDLE $ERROR_HANDLE 
-             $WROTE_TO_STDERR );
+             $WROTE_TO_STDERR $ENABLE_OUTPUT );
 
 # Global because test script needs them. They really should be lexically
 # scoped to this package.
@@ -40,6 +40,10 @@ $CACHE_PATH;
 
 # The temporarily stored output
 $THE_CAPTURED_OUTPUT = '';
+
+# Indicates whether output should be sent to the output filehandle when
+# print() is called.
+$ENABLE_OUTPUT = 1;
 
 # Used to determine if there was an error in the script that caused it to
 # write to STDERR
@@ -143,6 +147,8 @@ sub setup
   $OUTPUT_HANDLE = $options->{output_handle};
   $ERROR_HANDLE = $options->{error_handle};
 
+  $ENABLE_OUTPUT = $options->{enable_output};
+
   return 1;
 }
 
@@ -166,6 +172,9 @@ sub _set_defaults
 
   $options->{error_handle} = $options->{watched_error_handle}
     unless defined $options->{error_handle};
+
+  $options->{enable_output} = 1
+    unless defined $options->{enable_output};
 
   return $options;
 }
@@ -318,20 +327,20 @@ sub _bind
 
   if (grep /output/, @handles)
   {
-    $OLD_STDOUT_TIE = tied $$WATCHED_OUTPUT_HANDLE;
+    $OLD_STDOUT_TIE = tied *$WATCHED_OUTPUT_HANDLE;
 
     # Tie the output handle to monitor output
-    tie ( $$WATCHED_OUTPUT_HANDLE, 'CGI::Cache::CatchSTDOUT' );
+    tie ( *$WATCHED_OUTPUT_HANDLE, 'CGI::Cache::CatchSTDOUT' );
 
     $CAPTURING = 1;
   }
 
   if (grep /error/, @handles)
   {
-    $OLD_STDERR_TIE = tied $$WATCHED_ERROR_HANDLE;
+    $OLD_STDERR_TIE = tied *$WATCHED_ERROR_HANDLE;
 
     # Monitor STDERR to see if the script has any problems
-    tie ( $$WATCHED_ERROR_HANDLE, 'CGI::Cache::MonitorSTDERR' );
+    tie ( *$WATCHED_ERROR_HANDLE, 'CGI::Cache::MonitorSTDERR' );
 
     # Store the previous warn() and die() handlers, unless they are ours. (We
     # don't want to call ourselves if the user calls setup twice!)
@@ -359,11 +368,11 @@ sub _unbind
 
   if (grep /output/, @handles)
   {
-    untie $$WATCHED_OUTPUT_HANDLE;
+    untie *$WATCHED_OUTPUT_HANDLE;
 
     if (defined $OLD_STDOUT_TIE)
     {
-      tie ( $$WATCHED_OUTPUT_HANDLE, "CGI::Cache::RestoreTie",
+      tie ( *$WATCHED_OUTPUT_HANDLE, "CGI::Cache::RestoreTie",
         $OLD_STDOUT_TIE );
       undef $OLD_STDOUT_TIE;
     }
@@ -373,11 +382,11 @@ sub _unbind
 
   if (grep /error/, @handles)
   {
-    untie $$WATCHED_ERROR_HANDLE;
+    untie *$WATCHED_ERROR_HANDLE;
 
     if (defined $OLD_STDERR_TIE)
     {
-      tie ( $$WATCHED_ERROR_HANDLE, "CGI::Cache::RestoreTie",
+      tie ( *$WATCHED_ERROR_HANDLE, "CGI::Cache::RestoreTie",
         $OLD_STDERR_TIE );
       undef $OLD_STDERR_TIE;
     }
@@ -413,8 +422,11 @@ sub buffer
 
 package CGI::Cache::RestoreTie;
 
-(*TIESCALAR, *TIEARRAY, *TIEHASH, *TIEHANDLE) =
-  ( sub { $_[1] } ) x 4;
+# If I wanted to be complete:
+# (*TIESCALAR, *TIEARRAY, *TIEHASH, *TIEHANDLE) =
+#   ( sub { $_[1] } ) x 4;
+
+sub TIEHANDLE { $_[1] }
 
 1;
 
@@ -448,15 +460,18 @@ sub PRINT
   # thing" to do here.
   local $^W = 0;
 
-  # Temporarily untie the filehandle so that we won't recursively call
-  # ourselves
-  CGI::Cache::_unbind( 'output' );
-
   $CGI::Cache::THE_CAPTURED_OUTPUT .= join '', @_;
 
-  print $CGI::Cache::OUTPUT_HANDLE @_;
+  # Temporarily untie the filehandle so that we won't recursively call
+  # ourselves
+  if ($CGI::Cache::ENABLE_OUTPUT)
+  {
+    CGI::Cache::_unbind( 'output' );
 
-  CGI::Cache::_bind( 'output' );
+    print $CGI::Cache::OUTPUT_HANDLE @_;
+
+    CGI::Cache::_bind( 'output' );
+  }
 }
 
 sub PRINTF
@@ -532,6 +547,38 @@ compatible with earlier versions. A smaller interface change also occurred in
 version 1.20.
 
 =head1 SYNOPSIS
+
+Here's a simple example:
+
+  #!/usr/bin/perl
+
+  use CGI;
+  use CGI::Cache;
+
+  # Set up cache
+  CGI::Cache::setup();
+
+  my $cgi = new CGI;
+
+  # CGI::Vars requires CGI version 2.50 or better
+  CGI::Cache::set_key($cgi->Vars);
+
+  # This should short-circuit the rest of the loop if a cache value is
+  # already there
+  CGI::Cache::start();
+
+  print $cgi->header, "\n";
+
+  print <<EOF;
+  <html><body>
+  <p>
+  This prints to STDOUT, which will be cached.
+  If the next visit is within 24 hours, the cached STDOUT
+  will be served instead of executing this 'print'.
+  </body></html>
+  EOF
+
+Here's a more complex example:
 
   use CGI;
   use CGI::Cache;
@@ -647,19 +694,23 @@ written:
 
 =over 4
 
-=item setup( { cache_options => \%cache_options,
-               [watched_output_handle => \*STDOUT],
-               [watched_error_handle => \*STDERR] );
-               [output_handle => <watched_output_handle>],
-               [error_handle => <watched_error_handle>] } );
+=item setup(...)
 
-    <cache_options> - options for configuration of the cache
-    <watched_output_handle> - the file handle to monitor for normal output
-    <watched_error_handle> - the file handle to monitor for error output
-    <output_handle> - the file handle to which to send normal output
-    <error_handle> - the file handle to which to send error output
+  setup( { cache_options => \%cache_options,
+             [enable_output => 1],
+             [watched_output_handle => \*STDOUT],
+             [watched_error_handle => \*STDERR] );
+             [output_handle => <watched_output_handle>],
+             [error_handle => <watched_error_handle>] } );
 
-Sets up the cache. The I<cache_options> parameter contains the same values as
+  <enable_output> - used to disable output while caching
+  <cache_options> - options for configuration of the cache
+  <watched_output_handle> - the file handle to monitor for normal output
+  <watched_error_handle> - the file handle to monitor for error output
+  <output_handle> - the file handle to which to send normal output
+  <error_handle> - the file handle to which to send error output
+
+Sets up the module. The I<cache_options> parameter contains the same values as
 the parameters for the Cache::SizeAwareFileCache module's new() method, with
 the same defaults. Below is a brief overview of the options and their
 defaults. This overview may be out of date with your version of
@@ -697,14 +748,23 @@ before the new cache value is added. The default size is unlimited.
 
 =back
 
-Normally CGI::Cache monitors STDOUT and STDERR, capturing output and caching
-it if there are no errors. However, with the remaining four optional
-parameters, you can modify the filehandles that CGI::Cache listens on and
-outputs to. The watched handles are the handles which CGI::Cache will monitor
-for output. The output and error handles are the handles to which CGI::Cache
-will send the output after it is cached. These default to whatever the
-watched handles are. This feature is useful when CGI::Cache is used to
-cache output to files:
+Normally CGI::Cache monitors STDOUT, storing output in a temporary buffer,
+before printing it to the output filehandle. It also monitors STDERR in order
+to determine if your CGI script has failed: if it has failed, then the buffer
+is discarded. Otherwise, the buffered output is cached for a later execution
+of your program. 
+
+The enable_output option allows you to cache the output but not
+send it to the output filehandle. This is useful, for example, if you want to
+store the output, then use buffer() to access it for processing before calling
+stop(), which stores the buffer in the cache.
+
+The remaining four optional parameters allow you to modify the filehandles
+that CGI::Cache listens on and outputs to. The watched handles are the handles
+which CGI::Cache will monitor for output. The output and error handles are the
+handles to which CGI::Cache will send the output after it is cached. These
+default to whatever the watched handles are. This feature is useful when
+CGI::Cache is used to cache output to files:
 
   use CGI::Cache;
 
@@ -797,11 +857,187 @@ returns 1. It doesn't make much sense to call this after calling start(), as
 CGI::Cache will have already determined that the cache entry is invalid.
 
 
+=head1 CGI::Cache and Persistent Environments
+
+CGI::Cache supports persistent environments. The key is the return value from
+start()---if the return value is 0, then cached output has been printed, and
+your persistent script should not regenerate its output. Typically you would
+do something like:
+
+  use vars qw($COUNTER);
+
+  while(NEW CONNECTION)
+  {
+    CGI::Cache::set_key(...);
+    
+    $COUNTER++;
+
+    CGI::Cache::start() or next;
+
+    ... NORMAL OUTPUT ...
+    print $COUNTER;
+
+    CGI::Cache::stop();
+  }
+
+When you invoke a CGI script like this using a URL like
+http://www.some.machine/cgi-bin/scriptname.fcgi the output will report that
+the counter is 1. If you reload this web page, you will get cached
+information--even though the counter was incremented, the reloaded web page
+will say that the counter is 1.
+
+However, if you change the parameters to the request by visiting
+http://www.some.machine/cgi-bin/scriptname.fcgi?var=1 (assuming your cache key
+is based on the parameters) you will get an updated web page.  The counter
+will show the correct value based on the number of times you reloaded the web
+page.  For example, if you did 2 reloads, the counter should be reported as
+4---the first load, plus two reloads, plus the final load with changed
+parameters.
+
+Finally, if you revisit http://www.some.machine/cgi-bin/scriptname.fcgi, you
+will see the cached web page with the counter equal to 1.
+
+The next few subsections provide examples of how to use CGI::Cache with
+different persistent CGI environments.
+
+=head2 CGI::Fast
+
+Here's an example with CGI::Fast:
+
+  #!/usr/bin/perl
+
+  use strict;
+
+  use CGI::Fast;
+  use CGI::Cache;
+
+  my $COUNTER = 0;
+
+  # Set up cache
+  CGI::Cache::setup();
+
+  while (my $cgi = new CGI::Fast)
+  {
+    CGI::Cache::set_key($cgi->Vars);
+
+    $COUNTER++;
+
+    # This should short-circuit the rest of the loop if a cache value is
+    # already there
+    CGI::Cache::start() or next;
+
+    print $cgi->header, "\n";
+
+    print<<EOF;
+  <html>
+  <head><title>FastCGI</title></head>
+  <body>Counter: $COUNTER PID: $$</body>
+  </html>
+  EOF
+
+    CGI::Cache::stop();
+  }
+
+=head2 FCGI
+
+Here's an example with FCGI:
+
+  #!/usr/bin/perl
+
+  use strict;
+
+  use FCGI;
+  use CGI::Cache;
+  use CGI;
+  use IO::Handle;
+
+  my $COUNTER = 0;
+
+  my $stdout = new IO::Handle;
+  my $stderr = new IO::Handle;
+
+  my %env;
+
+  my $request = FCGI::Request(\*STDIN, $stdout, $stderr, \%env);
+
+  # Set up cache
+  if ($request->IsFastCGI())
+  {
+    CGI::Cache::setup( { output_handle => $stdout,
+                         error_handle => $stderr } );
+  }
+  else
+  {
+    CGI::Cache::setup();
+  }
+
+  while ($request->Accept() >= 0)
+  {
+    my $cgi = new CGI($env{QUERY_STRING});
+    CGI::Cache::set_key($cgi->Vars);
+
+    $COUNTER++;
+
+    # This should short-circuit the rest of the loop if a cache value is
+    # already there
+    CGI::Cache::start() or next;
+
+    print $cgi->header, "\n";
+
+    print<<EOF;
+  <html>
+  <head><title>FastCGI</title></head>
+  <body>Counter: $COUNTER PID: $$</body>
+  </html>
+  EOF
+
+    CGI::Cache::stop();
+  }
+
+
+=head2 SpeedyCGI
+
+Here's an example with SpeedyCGI:
+
+  #!/usr/bin/speedy
+
+  use strict;
+
+  use CGI;
+  use CGI::Cache;
+
+  use vars qw($COUNTER);
+
+  # Set up cache
+  CGI::Cache::setup();
+
+  $COUNTER++;
+
+  my $cgi = new CGI;
+
+  CGI::Cache::set_key($cgi->Vars);
+
+  # This should short-circuit the rest of the program if a cache value is
+  # already there
+  CGI::Cache::start() or exit;
+
+  print $cgi->header, "\n";
+
+  print<<EOF;
+  <html>
+  <head><title>SpeedyCGI</title></head>
+  <body>Counter: $COUNTER PID: $$</body>
+  </html>
+  EOF
+
+  CGI::Cache::stop();
+
 =head1 BUGS
 
 No known bugs.
 
 Contact david@coppit.org for bug reports and suggestions.
+
 
 =head1 AUTHOR
 

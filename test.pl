@@ -19,7 +19,7 @@ use File::Path;
 use strict;
 use vars qw( %TEST_SCRIPTS $VERSION );
 
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 my $PERL = $^X;
 
@@ -276,6 +276,20 @@ unlink "TEST.OUT";
 print "RESULTS: $results";
 EOF
          "Test output 1\n"],
+
+  15 => [<<'EOF',
+use lib './blib/lib';
+use CGI::Cache;
+
+CGI::Cache::setup( { enable_output => 0 } );
+CGI::Cache::set_key('test key');
+CGI::Cache::start() or exit;
+
+print "Test output 1\n";
+
+sleep 2;
+EOF
+         ["","Test output 1\n"]],
 
 );
 
@@ -814,6 +828,37 @@ sub {
     # Now compare the real answer to what was cached
 		($real_results eq $CGI::Cache::THE_CACHE->get($CGI::Cache::THE_CACHE_KEY)) ||
 			die "Cache file didn't have right content.";
+	};
+
+	unlink "$test_script";
+
+	($@ eq '') ? 1 : 0;
+},
+
+# Test 21: test disabling of output while caching
+sub {
+  my $script_number = 15;
+	my $test_script = "cgi_test_$script_number.cgi";
+
+  write_script($script_number,$test_script);
+  setup_cache($script_number,$test_script);
+
+	$@ = '';
+	eval {
+		#	The run should not send anything to the output
+		my $script_output = `$PERL $test_script`;
+
+    # Get the real STDOUT and compare that to what test generated
+    my $real_output_results = $TEST_SCRIPTS{$script_number}[1][0];
+
+		die "Test script didn't output the correct content to STDOUT."
+		  if $real_output_results ne $script_output;
+
+    # Get the real cached data and compare that to what test generated
+    my $real_cache_results = $TEST_SCRIPTS{$script_number}[1][1];
+
+		die "Cache file didn't have right content."
+		  if $real_cache_results ne $CGI::Cache::THE_CACHE->get($CGI::Cache::THE_CACHE_KEY);
 	};
 
 	unlink "$test_script";

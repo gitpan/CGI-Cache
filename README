@@ -1,4 +1,4 @@
-CGI::Cache 1.21
+CGI::Cache
 
 Perl extension to help cache output of time- intensive CGI scripts so that
 subsequent visits to such scripts will not cost as much time.
@@ -14,11 +14,12 @@ WARNING! The interface changed slightly in version 1.20.
 
 NEW IN THIS VERSION
 
-1.21
-- Fixed a documentation bug in the synopsis. (Thanks to Ken for the report.)
-- Added a long-overdue credit to Terrance Brannon in the authors section of
-  the POD. He had donated me the use of the CGI::Cache namespace, and kindly
-  allowed the current codebase to replace his.
+1.30
+- Added enable_output feature.
+- Verified SpeedyCGI compatibility.
+- Added a new section on use in persistent environments.
+- Corrected tie, tied, and untie syntax--apparently not a bug, although it
+  should have been.
 
 
 MODULE DEPENDENCIES

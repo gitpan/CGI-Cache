@@ -6,84 +6,78 @@ use vars qw( $VERSION );
 use File::Path;
 use File::Spec;
 use File::Spec::Functions qw( tmpdir );
-use File::Cache;
-use Storable qw (freeze);
+use Cache::SizeAwareFileCache;
+use Storable qw( freeze );
 
-$VERSION = '1.10';
+$VERSION = '1.20';
 
 # --------------------------------------------------------------------------
 
-# Globals
-use vars qw( $CAPTURE_STARTED $CAPTURING $CACHE_KEY $ROOT_DIR $TIME_TO_LIVE
-             $MODE $CACHE $CAPTURED_OUTPUT $DEFAULT_CACHE_KEY $CACHE_PATH
-             $WROTE_TO_STDERR $CALLED_WARN_OR_DIE $OLD_STDOUT_TIE
-             $OLD_STDERR_TIE $WARN $DIE );
+# Global because CatchSTDOUT and CatchSTDERR need them
+use vars qw( $THE_CAPTURED_OUTPUT $OUTPUT_HANDLE $ERROR_HANDLE 
+             $WROTE_TO_STDERR );
 
-# 1 indicates that we started capturing STDOUT
-$CAPTURE_STARTED = 0;
+# Global because test script needs them. They really should be lexically
+# scoped to this package.
+use vars qw( $THE_CACHE $THE_CACHE_KEY $CACHE_PATH );
 
-# 1 indicates that we are currently capturing STDOUT
-$CAPTURING = 0;
+my $DEFAULT_EXPIRES_IN = 24 * 60 * 60;
+
+# 1 indicates that we started capturing output
+my $CAPTURE_STARTED = 0;
+
+# 1 indicates that we are currently capturing output
+my $CAPTURING = 0;
 
 # The cache key
-$CACHE_KEY = undef;
-
-# The directory in which the cache resides
-$ROOT_DIR = undef;
-
-# The default amount of time the cache entry is to live
-$TIME_TO_LIVE = undef;
-
-# The default mode for cache entries
-$MODE = undef;
+$THE_CACHE_KEY = undef;
 
 # The cache
-$CACHE = undef;
+$THE_CACHE = undef;
 
-# The temporarily stored STDOUT
-$CAPTURED_OUTPUT = '';
+# Path to cache. Used by test harness to clean things up.
+$CACHE_PATH;
 
-# The default cache key. (Actually concatenated with location of temp
-# dir.)
-$DEFAULT_CACHE_KEY = 'CGI_Cache';
-
-# The default cache key. (Actually concatenated with location of temp
-# dir.)
-$CACHE_PATH = '';
+# The temporarily stored output
+$THE_CAPTURED_OUTPUT = '';
 
 # Used to determine if there was an error in the script that caused it to
 # write to STDERR
 $WROTE_TO_STDERR = 0;
-$CALLED_WARN_OR_DIE = 0;
+my $CALLED_WARN_OR_DIE = 0;
+
+# The filehandles to monitor. These are normally STDOUT and STDERR.
+my $WATCHED_OUTPUT_HANDLE = undef;
+my $WATCHED_ERROR_HANDLE = undef;
+
+# References to the filehandles to send output to. These are normally STDOUT
+# and STDERR.
+$OUTPUT_HANDLE = undef;
+$ERROR_HANDLE = undef;
 
 # Used to store the old tie'd variables, if any. (Under mod_perl,
 # STDOUT is tie'd to the Apache module.) Undef means that there is no
 # old tie.
-$OLD_STDOUT_TIE = undef;
-$OLD_STDERR_TIE = undef;
+my $OLD_STDOUT_TIE = undef;
+my $OLD_STDERR_TIE = undef;
 
 # The original warn and die handlers
-$WARN = undef;
-$DIE = undef;
+my $OLD_WARN = undef;
+my $OLD_DIE = undef;
 
 # --------------------------------------------------------------------------
-
-# This end block ensures that the captured STDOUT will be written to a
-# file if the CGI script exits before calling stop(). However, stop()
-# will not automatically be called if the script is exiting via a die
-# (detected by $? == 2).
 
 sub CGI_Cache_warn
 {
   $CALLED_WARN_OR_DIE = 1;
 
-  if ($WARN ne '')
+  if ( defined $OLD_WARN )
   {
-    &$WARN(@_);
+    &$OLD_WARN( @_ );
   }
   else
   {
-    CORE::warn(@_);
+    CORE::warn( @_ );
   }
 }
 
@@ -93,17 +87,21 @@ sub CGI_Cache_die
 {
   $CALLED_WARN_OR_DIE = 1;
 
-  if ($DIE ne '')
+  if ( defined $OLD_DIE )
   {
-    &$DIE(@_);
+    &$OLD_DIE( @_ );
   }
   else
   {
-    CORE::die(@_);
+    CORE::die( @_ );
   }
 }
 
 # --------------------------------------------------------------------------
+
+# This end block ensures that the captured output will be written to a
+# file if the CGI script exits before calling stop(). However, stop()
+# will not automatically be called if the script is exiting via a die
 
 END
 {
@@ -111,16 +109,14 @@ END
 
   # Unfortunately, die() writes to STDERR in a magical way that doesn't allow
   # us to catch it. In this case we check $? for an error code.
-  if ($CALLED_WARN_OR_DIE || $WROTE_TO_STDERR || $? == 2)
+  if ( $CALLED_WARN_OR_DIE || $WROTE_TO_STDERR || $? == 2 )
   {
-    stop(0);
+    stop( 0 );
   }
   else
   {
-    stop(1);
+    stop( 1 );
   }
-
-  $main::SIG{__DIE__} = $DIE;
 }
 
 # --------------------------------------------------------------------------
@@ -131,25 +127,21 @@ sub setup
 {
   my $options = shift;
 
-  $options = _set_defaults($options);
+  $options = {} unless defined $options;
 
-  $CACHE = new File::Cache($options);
+  die "CGI::Cache::setup() takes a single hash reference for options"
+    unless UNIVERSAL::isa($options, 'HASH') && !@_;
 
-  CORE::die "File::Cache::new failed\n" unless defined $CACHE;
+  $options = _set_defaults( $options );
 
-  # Store the previous warn() and die() handlers, unless they are ours. (We
-  # don't want to call ourselves if the user calls setup twice!)
-  if ($main::SIG{__WARN__} ne \&CGI::Cache::CGI_Cache_warn)
-  {
-    $WARN = $main::SIG{__WARN__};
-    $main::SIG{__WARN__} = \&CGI::Cache::CGI_Cache_warn;
-  }
+  $THE_CACHE = new Cache::SizeAwareFileCache( $options->{cache_options} );
+  die "Cache::SizeAwareFileCache::new failed\n" unless defined $THE_CACHE;
 
-  if ($main::SIG{__DIE__} ne \&CGI::Cache::CGI_Cache_die)
-  {
-    $DIE = $main::SIG{__DIE__};
-    $main::SIG{__DIE__} = \&CGI::Cache::CGI_Cache_die;
-  }
+  $WATCHED_OUTPUT_HANDLE = $options->{watched_output_handle};
+  $WATCHED_ERROR_HANDLE = $options->{watched_error_handle};
+
+  $OUTPUT_HANDLE = $options->{output_handle};
+  $ERROR_HANDLE = $options->{error_handle};
 
   return 1;
 }
@@ -160,46 +152,72 @@ sub _set_defaults
 {
   my $options = shift;
 
+  $options->{cache_options} =
+    _set_cache_defaults( $options->{cache_options} );
+
+  $options->{watched_output_handle} = \*STDOUT
+    unless defined $options->{watched_output_handle};
+
+  $options->{watched_error_handle} = \*STDERR
+    unless defined $options->{watched_error_handle};
+
+  $options->{output_handle} = $options->{watched_output_handle}
+    unless defined $options->{output_handle};
+
+  $options->{error_handle} = $options->{watched_error_handle}
+    unless defined $options->{error_handle};
+
+  return $options;
+}
+
+# --------------------------------------------------------------------------
+
+sub _set_cache_defaults
+{
+  my $cache_options = shift;
+
   # Set default value for namespace
-  unless (defined $options->{namespace})
+  unless ( defined $cache_options->{namespace} )
   {
     # Script name may not be defined if we are running in off-line mode
-    if (defined $ENV{SCRIPT_NAME})
+    if ( defined $ENV{SCRIPT_NAME} )
     {
-      (undef,undef,$options->{namespace}) =
-        File::Spec->splitpath($ENV{SCRIPT_NAME},0);
+      ( undef, undef, $cache_options->{namespace} ) =
+        File::Spec->splitpath( $ENV{SCRIPT_NAME}, 0 );
     }
     else
     {
-      (undef,undef,$options->{namespace}) =
-        File::Spec->splitpath($0,0);
+      ( undef, undef, $cache_options->{namespace} ) =
+        File::Spec->splitpath( $0, 0 );
     }
   }
 
   # Set default value for expires_in
-  $options->{expires_in} = 24 * 60 * 60
-    unless defined $options->{expires_in};
+  $cache_options->{expires_in} = $DEFAULT_EXPIRES_IN
+    unless defined $cache_options->{default_expires_in};
 
 
-  # Set default value for cache key
-  unless (defined $options->{cache_key})
-  {
-    my $tmpdir = tmpdir() or
-      CORE::die("No tmpdir on this system.  Bugs to the authors of File::Spec");
-
-    $CACHE_PATH = File::Spec->catfile($tmpdir, $DEFAULT_CACHE_KEY);
-
-    $options->{cache_key} = $CACHE_PATH;
-  }
-
-
-  # Set default value for username
-  $options->{username} = "" unless defined $options->{username};
+  # Set default value for cache root
+  $cache_options->{cache_root} = _compute_default_cache_root()
+    unless defined $cache_options->{cache_root};
 
   # Set default value for max_size
-  $options->{max_size} = $File::Cache::sNO_MAX_SIZE;
+  $cache_options->{max_size} = $Cache::SizeAwareFileCache::NO_MAX_SIZE;
 
-  return $options;
+  return $cache_options;
+}
+
+# --------------------------------------------------------------------------
+
+sub _compute_default_cache_root
+{
+  my $tmpdir = tmpdir() or
+    die( "No tmpdir() on this system. " .
+         "Send a bug report to the authors of File::Spec" );
+
+  $CACHE_PATH = File::Spec->catfile( $tmpdir, 'CGI_Cache' );
+
+  return $CACHE_PATH;
 }
 
 # --------------------------------------------------------------------------
@@ -210,7 +228,7 @@ sub set_key
 
   $Storable::canonical = 'true';
 
-  $CACHE_KEY = freeze $key;
+  $THE_CACHE_KEY = freeze $key;
 
   return 1;
 }
@@ -219,33 +237,25 @@ sub set_key
 
 sub start
 {
-  return 0 unless defined $CACHE_KEY;
+  die "Cache key must be defined before calling CGI::Cache::start()"
+    unless defined $THE_CACHE_KEY;
 
   # First see if a cached file already exists
-  my $cached_output = $CACHE->get($CACHE_KEY);
+  my $cached_output = $THE_CACHE->get( $THE_CACHE_KEY );
 
-  if (defined $cached_output)
+  if ( defined $cached_output )
   {
-    print $cached_output;
-    exit 0;
+    print $OUTPUT_HANDLE $cached_output;
+    return 0;
   }
   else
   {
-    # Store old tie's, if any
-    $OLD_STDOUT_TIE = tied *STDOUT;
-    $OLD_STDERR_TIE = tied *STDERR;
-
-    # Copy STDOUT to a variable for caching later.
-    tie (*STDOUT,'CGI::Cache::CatchSTDOUT');
-
-    # Monitor STDERR to see if the script has any problems
-    tie (*STDERR,'CGI::Cache::MonitorSTDERR');
+    _bind();
 
     $CAPTURE_STARTED = 1;
-    $CAPTURING = 1;
-  }
 
-  1;
+    return 1;
+  }
 }
 
 # --------------------------------------------------------------------------
@@ -255,29 +265,21 @@ sub stop
   return 0 unless $CAPTURE_STARTED;
 
   my $cache_output = shift;
-
-  # See if we need to cache the results
   $cache_output = 1 unless defined $cache_output;
 
-  # Stop storing output and restore STDOUT
-  untie *STDOUT;
-  untie *STDERR;
+  _unbind();
 
-  tie (*STDOUT,ref $OLD_STDOUT_TIE) if defined $OLD_STDOUT_TIE;
-  tie (*STDERR,ref $OLD_STDERR_TIE) if defined $OLD_STDERR_TIE;
-
-  $CAPTURE_STARTED = 0;
-
-  # Cache the saved STDOUT if necessary
-  $CACHE->set($CACHE_KEY,$CAPTURED_OUTPUT) if $cache_output;
+  # Cache the saved output if necessary
+  $THE_CACHE->set( $THE_CACHE_KEY, $THE_CAPTURED_OUTPUT ) if $cache_output;
 
   # May be important for mod_perl situations
-  $CAPTURED_OUTPUT = '';
+  $CAPTURE_STARTED = 0;
+  $THE_CAPTURED_OUTPUT = '';
   $WROTE_TO_STDERR = 0;
   $CALLED_WARN_OR_DIE = 0;
-  $CACHE_KEY = undef;
+  $THE_CACHE_KEY = undef;
 
-  1;
+  return 1;
 }
 
 # --------------------------------------------------------------------------
@@ -288,9 +290,9 @@ sub pause
   # capturing
   return 0 unless $CAPTURE_STARTED && $CAPTURING;
 
-  $CAPTURING = 0;
+  _unbind( 'output' );
 
-  1;
+  return 1;
 }
 
 # --------------------------------------------------------------------------
@@ -301,47 +303,139 @@ sub continue
   # not capturing
   return 0 unless $CAPTURE_STARTED && !$CAPTURING;
 
-  $CAPTURING = 1;
+  _bind( 'output' );
 
-  1;
+  return 1;
+}
+
+# --------------------------------------------------------------------------
+
+sub _bind
+{
+  my @handles = @_;
+
+  @handles = ( 'output', 'error' ) unless @handles;
+
+  if (grep /output/, @handles)
+  {
+    $OLD_STDOUT_TIE = tied $$WATCHED_OUTPUT_HANDLE;
+
+    # Tie the output handle to monitor output
+    tie ( $$WATCHED_OUTPUT_HANDLE, 'CGI::Cache::CatchSTDOUT' );
+
+    $CAPTURING = 1;
+  }
+
+  if (grep /error/, @handles)
+  {
+    $OLD_STDERR_TIE = tied $$WATCHED_ERROR_HANDLE;
+
+    # Monitor STDERR to see if the script has any problems
+    tie ( $$WATCHED_ERROR_HANDLE, 'CGI::Cache::MonitorSTDERR' );
+
+    # Store the previous warn() and die() handlers, unless they are ours. (We
+    # don't want to call ourselves if the user calls setup twice!)
+    if ( $main::SIG{__WARN__} ne \&CGI_Cache_warn )
+    {
+      $OLD_WARN = $main::SIG{__WARN__} if $main::SIG{__WARN__} ne '';
+      $main::SIG{__WARN__} = \&CGI_Cache_warn;
+    }
+
+    if ( $main::SIG{__DIE__} ne \&CGI_Cache_die )
+    {
+      $OLD_DIE = $main::SIG{__DIE__} if $main::SIG{__DIE__} ne '';
+      $main::SIG{__DIE__} = \&CGI_Cache_die;
+    }
+  }
+}
+
+# --------------------------------------------------------------------------
+
+sub _unbind
+{
+  my @handles = @_;
+
+  @handles = ( 'output', 'error' ) unless @handles;
+
+  if (grep /output/, @handles)
+  {
+    untie $$WATCHED_OUTPUT_HANDLE;
+
+    if (defined $OLD_STDOUT_TIE)
+    {
+      tie ( $$WATCHED_OUTPUT_HANDLE, "CGI::Cache::RestoreTie",
+        $OLD_STDOUT_TIE );
+      undef $OLD_STDOUT_TIE;
+    }
+
+    $CAPTURING = 0;
+  }
+
+  if (grep /error/, @handles)
+  {
+    untie $$WATCHED_ERROR_HANDLE;
+
+    if (defined $OLD_STDERR_TIE)
+    {
+      tie ( $$WATCHED_ERROR_HANDLE, "CGI::Cache::RestoreTie",
+        $OLD_STDERR_TIE );
+      undef $OLD_STDERR_TIE;
+    }
+
+    $main::SIG{__DIE__} = $OLD_DIE;
+    undef $OLD_DIE;
+    $main::SIG{__WARN__} = $OLD_WARN; 
+    undef $OLD_WARN;
+  }
 }
 
 # --------------------------------------------------------------------------
 
 sub invalidate_cache_entry
 {
-  $CACHE->remove($CACHE_KEY);
+  $THE_CACHE->remove( $THE_CACHE_KEY );
 
-  1;
+  return 1;
 }
 
 # --------------------------------------------------------------------------
 
 sub buffer
 {
-  $CAPTURED_OUTPUT = join('',@_) if @_;
+  $THE_CAPTURED_OUTPUT = join( '', @_ ) if @_;
 
-  return $CAPTURED_OUTPUT;
+  return $THE_CAPTURED_OUTPUT;
 }
 
-# --------------------------------------------------------------------------
+1;
+
+# ##########################################################################
+
+package CGI::Cache::RestoreTie;
+
+(*TIESCALAR, *TIEARRAY, *TIEHASH, *TIEHANDLE) =
+  ( sub { $_[1] } ) x 4;
+
+1;
+
+############################################################################
 
 package CGI::Cache::CatchSTDOUT;
 
-# These functions are for tie'ing the STDOUT filehandle
+# These functions are for tie'ing the output filehandle
 
 sub TIEHANDLE
 {
   my $package = shift;
 
-  return bless {},$package;
+  return bless {}, $package;
 }
 
 sub WRITE
 {
-  my($r, $buff, $length, $offset) = @_;
+  my( $r, $buff, $length, $offset ) = @_;
 
-  my $send = substr($buff, $offset, $length);
+  my $send = substr( $buff, $offset, $length );
   print $send;
 }
 
@@ -356,17 +450,13 @@ sub PRINT
 
   # Temporarily untie the filehandle so that we won't recursively call
   # ourselves
-  untie *STDOUT;
+  CGI::Cache::_unbind( 'output' );
 
-  tie (*STDOUT,ref $CGI::Cache::OLD_STDOUT_TIE)
-    if defined $CGI::Cache::OLD_STDOUT_TIE;
+  $CGI::Cache::THE_CAPTURED_OUTPUT .= join '', @_;
 
-  $CGI::Cache::CAPTURED_OUTPUT .= join '', @_
-    if $CGI::Cache::CAPTURING;
+  print $CGI::Cache::OUTPUT_HANDLE @_;
 
-  print @_;
-
-  tie *STDOUT,__PACKAGE__;
+  CGI::Cache::_bind( 'output' );
 }
 
 sub PRINTF
@@ -374,12 +464,12 @@ sub PRINTF
   my $r = shift;
   my $fmt = shift;
 
-  print sprintf($fmt, @_);
+  print sprintf( $fmt, @_ );
 }
 
 1;
 
-# --------------------------------------------------------------------------
+############################################################################
 
 package CGI::Cache::MonitorSTDERR;
 
@@ -389,14 +479,14 @@ sub TIEHANDLE
 {
   my $package = shift;
 
-  return bless {},$package;
+  return bless {}, $package;
 }
 
 sub WRITE
 {
-  my($r, $buff, $length, $offset) = @_;
+  my( $r, $buff, $length, $offset ) = @_;
 
-  my $send = substr($buff, $offset, $length);
+  my $send = substr( $buff, $offset, $length );
   print $send;
 }
 
@@ -406,13 +496,13 @@ sub PRINT
 
   # Temporarily untie the filehandle so that we won't recursively call
   # ourselves
-  untie *STDERR;
-  tie (*STDERR,ref $CGI::Cache::OLD_STDERR_TIE)
-    if defined $CGI::Cache::OLD_STDERR_TIE;
-  print STDERR @_;
-  tie *STDERR,__PACKAGE__;
+  CGI::Cache::_unbind( 'error' );
+
+  print $CGI::Cache::ERROR_HANDLE @_;
 
   $CGI::Cache::WROTE_TO_STDERR = 1;
+
+  CGI::Cache::_bind( 'error' );
 }
 
 sub PRINTF
@@ -420,14 +510,8 @@ sub PRINTF
   my $r = shift;
   my $fmt = shift;
 
-  print sprintf($fmt, @_);
+  print sprintf( $fmt, @_ );
 }
-
-1;
-
-# --------------------------------------------------------------------------
-
-package CGI::Cache;
 
 1;
 
@@ -444,7 +528,8 @@ much time.
 =head1 WARNING
 
 The interface as of version 1.01 has changed considerably and is NOT
-compatible with earlier versions.
+compatible with earlier versions. A smaller interface change also occurred in
+version 1.20.
 
 =head1 SYNOPSIS
 
@@ -454,20 +539,20 @@ compatible with earlier versions.
   my $query = new CGI;
 
   # Set up a cache in /tmp/CGI_Cache/demo_cgi, with publicly
-  # read/writable cache entries, a maximum size of 20 megabytes,
+  # unreadable cache entries, a maximum size of 20 megabytes,
   # and a time-to-live of 6 hours.
-  CGI::Cache::setup( { cache_key => '/tmp/CGI_Cache',
+  CGI::Cache::setup( { cache_root => '/tmp/CGI_Cache',
                        namespace => 'demo_cgi',
-                       filemode => 0666,
+                       directory_umask => 077,
                        max_size => 20 * 1024 * 1024,
-                       expires_in => 6 * 60 * 60,
+                       default_expires_in => '6 hours',
                      } );
 
   # CGI::Vars requires CGI version 2.50 or better
-  CGI::Cache::set_key($query->Vars);
+  CGI::Cache::set_key( $query->Vars );
   CGI::Cache::invalidate_cache_entry()
-    if $query->param('force_regenerate') eq 'true';
-  CGI::Cache::start();
+    if $query->param( 'force_regenerate' ) eq 'true';
+  CGI::Cache::start() or exit;
 
   print "Content-type: text/html\n\n";
 
@@ -492,13 +577,15 @@ compatible with earlier versions.
   </body></html>
   EOF
 
+  # Optional unless you're using mod_perl for FastCGI
+  CGI::Cache::stop();
 
 =head1 DESCRIPTION
 
 This module is intended to be used in a CGI script that may
 benefit from caching its output. Some CGI scripts may take
 longer to execute because the data needed in order to construct
-the page may not be readily available. Such a script may need to
+the page may not be quickly computed. Such a script may need to
 query a remote database, or may rely on data that doesn't arrive
 in a timely fashion, or it may just be computationally intensive.
 Nonetheless, if you can afford the tradeoff of showing older,
@@ -508,22 +595,23 @@ that function.
 This module was written such that any existing CGI code could benefit
 from caching without really changing any of existing CGI code guts.
 The CGI script can do just what it has always done, that is, construct
-an html page and print it to the STDOUT file descriptor, then exit.
+an html page and print it to the output file descriptor, then exit.
 What you'll do in order to cache pages is include the module, specify
 some cache options and the cache key, and then call start() to begin
 caching output.
 
-Internally, the CGI::Cache module ties the STDOUT file descriptor to
-an internal variable to which all output to STDOUT is saved. When the
-user calls stop() (or the END{} block of CGI::Cache is executed during
-script shutdown) the contents of the variable are inserted into the
-cache using the cache key the user specified earlier with set_key().
+Internally, the CGI::Cache module ties the output file descriptor (usually
+STDOUT) to an internal variable to which all output is saved. When the user
+calls stop() (or the END{} block of CGI::Cache is executed during script
+shutdown) the contents of the variable are inserted into the cache using the
+cache key the user specified earlier with set_key().
 
-Once a page has been cached in this fashion, then a subsequent visit
-to that CGI script will check for an existing cache entry for the
-given key before continuing through the code. If the file exists, then
-the cache file's content is printed to the real STDOUT and the process
-exits before executing the regular CGI code.
+Once a page has been cached in this fashion, a subsequent visit to that page
+will invoke the start() function again, which will then check for an existing
+cache entry for the given key before continuing through the code. If the cache
+entry exists, then the cache entry's content is printed to the output
+filehandle (usually STDOUT) and a 0 is returned to indicate that cached output
+was used.
 
 =head2 CHOOSING A CACHE KEY
 
@@ -550,35 +638,41 @@ written:
 
   my $params = $query->Vars;
   delete $params->{'debug'};
-  CGI::Cache::set_key($params);
-  CGI::Cache::start();
+  CGI::Cache::set_key( $params );
+  CGI::Cache::start() or exit;
 
 =head2 THE CGI::CACHE ROUTINES
 
 =over 4
 
-=item setup( \%options );
+=item setup( { cache_options => \%cache_options,
+               [watched_output_handle => \*STDOUT],
+               [watched_error_handle => \*STDERR] );
+               [output_handle => <watched_output_handle>],
+               [error_handle => <watched_error_handle>] } );
 
-Sets up the cache. The parameters are the same as the parameters for
-the File::Cache module's new() method, with the same defaults. Below
-is a brief overview of the options and their defaults. This overview
-may be out of date with your version of File::Cache. Consult I<perldoc
-File::Cache> for more accurate information.
+    <cache_options> - options for configuration of the cache
+    <watched_output_handle> - the file handle to monitor for normal output
+    <watched_error_handle> - the file handle to monitor for error output
+    <output_handle> - the file handle to which to send normal output
+    <error_handle> - the file handle to which to send error output
 
-NOTE: If you plan to modify warn() or die() (i.e. redefine $SIG{__WARN__} or
-$SIG{__DIE__}) so that they no longer print to STDERR, you must do so before
-calling setup(). For example, if you do a "require CGI::Carp qw(
-fatalsToBrowser)", make sure you do it before calling CGI::Cache::setup().
+Sets up the cache. The I<cache_options> parameter contains the same values as
+the parameters for the Cache::SizeAwareFileCache module's new() method, with
+the same defaults. Below is a brief overview of the options and their
+defaults. This overview may be out of date with your version of
+Cache::SizeAwareFileCache. Consult I<perldoc Cache::SizeAwareFileCache> for
+more accurate information.
 
 =over 4
 
-=item $options{cache_key}
+=item $cache_options{cache_root}
 
-The cache_key is the location of the cache. Here cache_key is used in keeping
-with the terminology used by File::Cache, and is different from the key
-referred to in set_key below.
+The cache_root is the file system location of the cache.  Leaving this unset
+will cause the cache to be created in a subdirectory of your temporary
+directory called CGI_Cache.
 
-=item $options{namespace}
+=item $cache_options{namespace}
 
 Namespaces provide isolation between cache objects. It is recommended
 that you use a namespace that is unique to your script. That way you
@@ -587,29 +681,48 @@ they will not collide. This value defaults to a subdirectory of your
 temp directory whose name matches the name of your script (as reported
 by $ENV{SCRIPT_NAME}, or $0 if $ENV{SCRIPT_NAME} is not defined).
 
-=item $options{expires_in}
+=item $cache_options{default_expires_in}
 
-If the "expires_in" option is set, all objects in this cache will be
-cleared after that number of seconds. If expires_in is not set, the
-web pages will never expire. The default is 24 hours.
+If the "default_expires_in" option is set, all objects in this cache will be
+cleared after that number of seconds. If expires_in is not set, the web pages
+will never expire. The default is 24 hours.
 
-=item $options{cache_key}
+=item $cache_options{max_size}
 
-The "cache_key" is used to determine the underlying filesystem
-namespace to use. Leaving this unset will cause the cache to be
-created in a subdirectory of your temporary directory called
-CGI_Cache. (The term "key" here is a bit misleading in light of the
-usage of the term earlier--this is really the path to the cache.)
-
-=item $options{max_size}
-
-"max_size" specifies the maximum size of the cache, in bytes.  Cache
-objects are removed during the set() operation in order to reduce the
-cache size before the new cache value is added. The max_size will be
-maintained regardless of the value of auto_remove_stale. The default
-size is unlimited.
+"max_size" specifies the maximum size of the cache, in bytes.  Cache objects
+are removed during the set() operation in order to reduce the cache size
+before the new cache value is added. The default size is unlimited.
 
 =back
+
+Normally CGI::Cache monitors STDOUT and STDERR, capturing output and caching
+it if there are no errors. However, with the remaining four optional
+parameters, you can modify the filehandles that CGI::Cache listens on and
+outputs to. The watched handles are the handles which CGI::Cache will monitor
+for output. The output and error handles are the handles to which CGI::Cache
+will send the output after it is cached. These default to whatever the
+watched handles are. This feature is useful when CGI::Cache is used to
+cache output to files:
+
+  use CGI::Cache;
+
+  open FH, ">TEST.OUT";
+
+  CGI::Cache::setup( { watched_output_handle => \*FH } );
+  CGI::Cache::set_key( 'test key' );
+  CGI::Cache::start() or exit;
+
+  # This is cached, and then sent to FH
+  print FH "Test output 1\n";
+
+  CGI::Cache::stop();
+
+  close FH;
+
+NOTE: If you plan to modify warn() or die() (i.e. redefine $SIG{__WARN__} or
+$SIG{__DIE__}) so that they no longer print to STDERR, you must do so before
+calling setup(). For example, if you do a "require CGI::Carp
+qw(fatalsToBrowser)", make sure you do it before calling CGI::Cache::setup().
 
 
 =item set_key ( <data> );
@@ -621,50 +734,51 @@ use when caching the script's output.
 
 =item start();
 
-Could you guess that the start() routine is what does all the work? It
-is this call that actually looks for an existing cache file, returning
-its content if it exists, then exits. If the cache file does not exist,
-then it captures the STDOUT filehandle and allows the CGI script's normal
-STDOUT be redirected to the cache file.
+Could you guess that the start() routine is what does all the work? It is this
+call that actually looks for an existing cache file and prints the output if
+it exists. If the cache file does not exist, then CGI::Cache captures the
+output filehandle and redirects the CGI script's output to the cache file.
 
-This function returns 0 if you haven't yet defined your cache key. It causes
-your program to exit if it finds valid cached data, and returns 1 if it has
-determined that you need to cache and has successfully captured STDOUT and
-STDERR.
+This function returns 1 if caching has started, and 0 if the cached output was
+printed. A common metaphor for using this function is:
+
+  CGI::Cache::start() or exit;
+
+This function dies if you haven't yet defined your cache key.
 
 
 =item $status = stop( [<cache_output>] );
-    <cache_output> - do we write the captured STDOUT to a cache file?
 
-The stop() routine tells us to stop capturing STDOUT.  The argument
+    <cache_output> - do we write the captured output to a cache file?
+
+The stop() routine tells us to stop capturing output.  The argument
 "cache_output" tells us whether or not to store the captured output in
 the cache. By default this argument is 1, since this is usually what
 we want to do. In an error condition, however, we may not want to
 cache the output.  A cache_output argument of 0 is used in this case.
 
 You don't have to call the stop() routine if you simply want to catch
-all STDOUT that the script generates for the duration of its
+all output that the script generates for the duration of its
 execution.  If the script exits without calling stop(), then the END{}
-block of the module will check to see of stop() has been called, and
-if not, it will call it. Note that CGI::Cache will detect whether your
-script is exiting as the result of an error, and will B<not> cache
-the output in this case.
+block of the CGI::cache will check to see of stop() has been called,
+and if not, it will call it. Note that CGI::Cache will detect whether
+your script is exiting as the result of an error, and will B<not>
+cache the output in this case.
 
-This function returns 0 if capturing has not been started, and 1 otherwise.
-
-=back
-
+This function returns 0 if capturing has not been started (by a call
+to start()), and 1 otherwise.
 
 =item $status = pause();
 
-Temporarily disable caching of output sent to STDOUT. Returns 0 if CGI::Cache
+Temporarily disable caching of output. Returns 0 if CGI::Cache
 is not currently caching output, and 1 otherwise.
 
 
 =item $status = continue();
 
-Enable caching of output sent to STDOUT. Returns 0 if caching is not currently
-enabled, and 1 otherwise.
+Enable caching of output.  This function returns 0 if capturing has
+not been started (by a call to start()) or if pause() was not
+previously called, and 1 otherwise.
 
 
 =item $scalar = buffer( [<content>] );
@@ -684,9 +798,7 @@ CGI::Cache will have already determined that the cache entry is invalid.
 
 =head1 BUGS
 
-This module is currently incompatible with other modules that tie STDOUT or
-STDERR, such as CGI::Fast (fastcgi). Compatibility is planned for a future
-release.
+No known bugs.
 
 Contact david@coppit.org for bug reports and suggestions.
 
@@ -703,7 +815,6 @@ it under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
- File::Cache
- perldoc -f open
+Cache::SizeAwareFileCache
 
 =cut

@@ -1,12 +1,22 @@
-CGI::Cache 1.01
+CGI::Cache 1.02
 
 Perl extension to help cache output of time- intensive CGI scripts so that
 subsequent visits to such scripts will not cost as much time.
 
 
-WARNING! The interface in version 1.01 is incompatible with the interface of
-version 1.00 and earlier. You will need to modify any existing scripts you
-have to use the new interface if you install this version.
+WARNING! The interface in this version of CGI::Cache is incompatible
+with the interface of version 1.00 and earlier. You will need to
+modify any existing scripts you have to use the new interface if you
+install this version.
+
+
+REVISION SUMMARY
+
+1.02  Mon Nov 13 00:07:24 EST 2000
+  - Fixed issues to make module mod_perl compatible.
+  - Fixed stop() documentation.
+  - Moved development to SourceForge.
+    (http://CGICache.sourceforge.net/)
 
 
 INSTALLATION
@@ -45,11 +55,10 @@ before trying to 'use' them. For example:
 	use CGI::Cache;
 
 
-AVAILABILITY
+HOMEPAGE
 
-The most current version of this module should be available
-at your favorite CPAN site, or may be retrieved from
-  http://www.cs.virginia.edu/~dwc3q/code/
+Visit http://cgicache.sourceforge.net/ for the latest version, mailing
+lists, discussion forums, CVS access, and more.
 
 
 COPYRIGHT
@@ -63,6 +72,13 @@ NOTES
 
 Please let me know if you are using this module. Tell me what
 bugs you find or what can be done to improve it.
+
+
+LICENSE
+
+This code is distributed under the GNU General Public License (GPL).
+See http://www.opensource.org/gpl-license.html and
+http://www.opensource.org/.
 
 
 AUTHOR

@@ -19,7 +19,7 @@ use File::Path;
 use strict;
 use vars qw( %TEST_SCRIPTS $VERSION );
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 # ----------------------------------------------------------------------------
 
@@ -82,6 +82,23 @@ print "Test output 4\n";
 print STDERR "STDERR!" if @ARGV;
 EOF
          "Test output 4\n"],
+
+  5 => [<<'EOF',
+use lib './blib/lib';
+use CGI::Cache;
+
+CGI::Cache::setup( );
+CGI::Cache::set_key( {2 => 'test key 3', 1 => 'test', 3 => 'key'} );
+CGI::Cache::start();
+
+print "Test output 5\n";
+
+CGI::Cache::stop();
+
+print "Test uncached output 5\n";
+EOF
+         ["Test output 5\n","Test output 5\nTest uncached output 5\n"]],
+
 );
 
 # ----------------------------------------------------------------------------
@@ -270,6 +287,38 @@ sub {
 
 	unlink "$file";
 	unlink "STDERR-redirected";
+
+	($@ eq '') ? 1 : 0;
+},
+
+# Test that stop() actually stops caching output
+sub {
+  my $script_number = 5;
+
+	my $file = "cgi_test_$script_number.cgi";
+
+  write_script($script_number,$file);
+  setup_cache($script_number,$file);
+
+	$@ = '';
+	eval {
+		#	First run should print to STDOUT but only cache part of it
+		my $script_output = `perl $file`;
+
+    # Get the real STDOUT and compare that to what test generated
+    my $real_output_results = $TEST_SCRIPTS{$script_number}[1][1];
+
+		($real_output_results eq $script_output) ||
+			die "Test script didn't output the correct content to STDOUT.";
+
+    # Get the real cached data and compare that to what test generated
+    my $real_cache_results = $TEST_SCRIPTS{$script_number}[1][0];
+
+		($real_cache_results eq $CGI::Cache::CACHE->get($CGI::Cache::CACHE_KEY)) ||
+			die "Cache file didn't have right content.";
+	};
+
+	unlink "$file";
 
 	($@ eq '') ? 1 : 0;
 },

@@ -9,14 +9,14 @@ use File::Spec::Functions qw( tmpdir );
 use File::Cache;
 use Storable qw (freeze);
 
-$VERSION = '1.01';
+$VERSION = '1.02';
 
 # --------------------------------------------------------------------------
 
 # Globals
 use vars qw( $CAPTURE_STARTED $CACHE_KEY $ROOT_DIR $TIME_TO_LIVE $MODE
              $CACHE $CAPTURED_OUTPUT $DEFAULT_CACHE_KEY $CACHE_PATH 
-             $WROTE_TO_STDERR );
+             $WROTE_TO_STDERR $OLD_STDOUT_TIE $OLD_STDERR_TIE );
 
 # 1 indicates that STDOUT is being captured
 $CAPTURE_STARTED = 0;
@@ -37,7 +37,7 @@ $MODE = undef;
 $CACHE = undef;
 
 # The temporarily stored STDOUT
-$CAPTURED_OUTPUT;
+$CAPTURED_OUTPUT = '';
 
 # The default cache key. (Actually concatenated with location of temp
 # dir.)
@@ -50,6 +50,12 @@ $CACHE_PATH = '';
 # Used to determine if there was an error in the script that caused it to
 # write to STDERR
 $WROTE_TO_STDERR = 0;
+
+# Used to store the old tie'd variables, if any. (Under mod_perl,
+# STDOUT is tie'd to the Apache module.) Undef means that there is no
+# old tie.
+$OLD_STDOUT_TIE = undef;
+$OLD_STDERR_TIE = undef;
 
 # --------------------------------------------------------------------------
 
@@ -143,13 +149,13 @@ sub _set_defaults
 
 sub set_key
 {
-	my $key = \@_;
+  my $key = \@_;
 
   $Storable::canonical = 'true';
 
   $CACHE_KEY = freeze $key;
 
-	return 1;
+  return 1;
 }
 
 # --------------------------------------------------------------------------
@@ -166,38 +172,50 @@ sub start
   }
   else
   {
-    #	Copy STDOUT to a variable for caching later.
+    # Store old tie's, if any
+    $OLD_STDOUT_TIE = tied *STDOUT;
+    $OLD_STDERR_TIE = tied *STDERR;
+
+    # Copy STDOUT to a variable for caching later.
     tie (*STDOUT,'CGI::Cache::CatchSTDOUT');
 
-    #	Monitor STDERR to see if the script has any problems
+    # Monitor STDERR to see if the script has any problems
     tie (*STDERR,'CGI::Cache::MonitorSTDERR');
 
     $CAPTURE_STARTED = 1;
   }
 
-	1;
+  1;
 }
 
 # --------------------------------------------------------------------------
 
 sub stop
 {
-	return 0 unless ($CAPTURE_STARTED);
+  return 0 unless ($CAPTURE_STARTED);
 
-	my $dump = shift;
+  my $cache_output = shift;
 
-	#	See if we need to cache the results
-	$dump = 1 unless defined $dump;
+  # See if we need to cache the results
+  $cache_output = 1 unless defined $cache_output;
 
-	#	Stop storing output and restore STDOUT
+  # Stop storing output and restore STDOUT
   untie *STDOUT;
   untie *STDERR;
-	$CAPTURE_STARTED = 0;
 
-	#	Cache the saved STDOUT if necessary
-	$CACHE->set($CACHE_KEY,$CAPTURED_OUTPUT) if $dump;
+  tie (*STDOUT,ref $OLD_STDOUT_TIE) if defined $OLD_STDOUT_TIE;
+  tie (*STDERR,ref $OLD_STDERR_TIE) if defined $OLD_STDERR_TIE;
 
-	1;
+  $CAPTURE_STARTED = 0;
+
+  # Cache the saved STDOUT if necessary
+  $CACHE->set($CACHE_KEY,$CAPTURED_OUTPUT) if $cache_output;
+
+  # May be important for mod_perl situations
+  $CAPTURED_OUTPUT = '';
+  $WROTE_TO_STDERR = 0;
+
+  1;
 }
 
 # --------------------------------------------------------------------------
@@ -225,9 +243,17 @@ sub PRINT
 {
   my $r = shift;
 
+  # Temporarily disable warnings so that we don't get "untie attempted
+  # while 1 inner references still exist". Not sure what's the "right
+  # thing" to do here.
+  local $^W = 0;
+
   # Temporarily untie the filehandle so that we won't recursively call
   # ourselves
   untie *STDOUT;
+
+  tie (*STDOUT,ref $CGI::Cache::OLD_STDOUT_TIE)
+    if defined $CGI::Cache::OLD_STDOUT_TIE;
   $CGI::Cache::CAPTURED_OUTPUT .= join '', @_;
   print @_;
   tie *STDOUT,__PACKAGE__;
@@ -271,6 +297,8 @@ sub PRINT
   # Temporarily untie the filehandle so that we won't recursively call
   # ourselves
   untie *STDERR;
+  tie (*STDERR,ref $CGI::Cache::OLD_STDERR_TIE)
+    if defined $CGI::Cache::OLD_STDERR_TIE;
   print STDERR @_;
   tie *STDERR,__PACKAGE__;
 
@@ -315,9 +343,9 @@ compatible with earlier versions.
 
   my $query = new CGI;
 
-  # Set up a cache in /tmp/CGI_Cache/demo_cgi, with publicly read/writable
-  # cache entries, a maximum size of 20 megabytes, and a time-to-live of 6
-  # hours.
+  # Set up a cache in /tmp/CGI_Cache/demo_cgi, with publicly
+  # read/writable cache entries, a maximum size of 20 megabytes,
+  # and a time-to-live of 6 hours.
   CGI::Cache::setup( { cache_key => '/tmp/CGI_Cache',
                        namespace => 'demo_cgi',
                        filemode => 0666,
@@ -325,15 +353,18 @@ compatible with earlier versions.
                        expires_in => 6 * 60 * 60,
                      } );
 
+  # CGI::Vars requires CGI version 2.50 or better
   CGI::Cache::set_key($query->Vars);
   CGI::Cache::start();
 
   print "Content-type: text/html\n\n";
 
   print <<EOF;
+  <html><body>
   This prints to STDOUT, which will be cached.
   If the next visit is within 6 hours, the cached STDOUT
   will be served instead of executing these 'prints'.
+  </body></html>
   EOF
 
 
@@ -386,7 +417,7 @@ third parameter which tells the script whether to write debugging
 information to a log file. Suppose the URL for Indianapolis Int'l to
 Chicago O'Hare looked like:
 
-	http://www.some.machine/cgi/airport?from=IND&to=ORD&debug=1
+  http://www.some.machine/cgi/airport?from=IND&to=ORD&debug=1
 
 We might want to remove the debug parameter because the output from
 the user's perspective is the same regardless of whether a log file is
@@ -466,16 +497,14 @@ its content if it exists, then exits. If the cache file does not exist,
 then it captures the STDOUT filehandle and allows the CGI script's normal
 STDOUT be redirected to the cache file.
 
-=item stop( [<dump> = 1] );
-	  <dump>      - do we dump the the cache file to STDOUT?
+=item stop( [<cache_output> = 1] );
+    <cache_output> - do we write the captured STDOUT to a  cache file?
 
-The stop() routine tells us to stop capturing STDOUT to the cache file.
-The cache file is closed and the file descriptor for STDOUT is restored
-to normal. The argument "dump" tells us whether or not to dump what has
-been captured in the cache file to the real STDOUT. By default this
-argument is 1, since this is usually what we want to do. In an error
-condition, however, we may want to cease caching and not print any of
-it to STDOUT. A dump argument of 0 is used in this case.
+The stop() routine tells us to stop capturing STDOUT.  The argument
+"cache_output" tells us whether or not to store the captured output in
+the cache. By default this argument is 1, since this is usually what
+we want to do. In an error condition, however, we may not want to
+cache the output.  A cache_output argument of 0 is used in this case.
 
 You don't have to call the stop() routine if you simply want to catch
 all STDOUT that the script generates for the duration of its

@@ -9,13 +9,17 @@ with the interface of version 1.00 and earlier. You will need to
 modify any existing scripts you have to use the new interface if you
 install this version.
 
-WARNING! The interface changed slightly in version 1.20.
-
 
 NEW IN THIS VERSION
 
-1.40
-- Added clear() function to clear the cache.
+1.41
+- Now uses Tie::Restore instead my own version. It's a trivial dependency, but
+  reuse is good, right?
+- Updated Makefile.PL
+- Fixed an incompatibility with modules like CGI::Carp that override
+  CORE::GLOBALS::die, a new feature since about perl 5.6.1
+- Fixed uninitialized variable warnings
+- Fixed documentation typo
 
 
 MODULE DEPENDENCIES

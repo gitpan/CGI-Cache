@@ -1,6 +1,7 @@
-Cache.pm
+lib/CGI/Cache.pm
 Changes
 MANIFEST
 Makefile.PL
 README
 test.pl
+META.yml                                Module meta-data (added by MakeMaker)

@@ -7,9 +7,10 @@ use File::Path;
 use File::Spec;
 use File::Spec::Functions qw( tmpdir );
 use Cache::SizeAwareFileCache;
+use Tie::Restore;
 use Storable qw( freeze );
 
-$VERSION = '1.40';
+$VERSION = '1.41';
 
 # --------------------------------------------------------------------------
 
@@ -36,7 +37,7 @@ $THE_CACHE_KEY = undef;
 $THE_CACHE = undef;
 
 # Path to cache. Used by test harness to clean things up.
-$CACHE_PATH;
+$CACHE_PATH = '';
 
 # The temporarily stored output
 $THE_CAPTURED_OUTPUT = '';
@@ -65,39 +66,51 @@ $ERROR_HANDLE = undef;
 my $OLD_STDOUT_TIE = undef;
 my $OLD_STDERR_TIE = undef;
 
+# Overwrite the CORE warn and die. Sometime after 5.6.1, modules like
+# CGI::Carp started using CORE::GLOBAL::die instead of $SIG{__DIE__} to
+# override the default die. This "use subs" will handle this new way of doing
+# things. In addition, we later point $SIG{__DIE__} to our die implementation.
+# NOTE: I'm not sure what will happen if someone sets CORE::GLOBAL::die *and*
+# $SIG{__DIE__}
+use subs qw( warn die );
+
 # The original warn and die handlers
-my $OLD_WARN = undef;
-my $OLD_DIE = undef;
+my $OLD_WARN_SIG = undef;
+my $OLD_DIE_SIG = undef;
 
 # --------------------------------------------------------------------------
 
-sub CGI_Cache_warn
+sub warn
 {
   $CALLED_WARN_OR_DIE = 1;
 
-  if ( defined $OLD_WARN )
+  # $OLD_WARN_SIG will be defined if the previously defined handler was set
+  # using signals. Otherwise it will have no effect.
+  if ($OLD_WARN_SIG)
   {
-    &$OLD_WARN( @_ );
+    &$OLD_WARN_SIG(@_);
   }
   else
   {
-    CORE::warn( @_ );
+    CORE::warn(@_);
   }
 }
 
 # --------------------------------------------------------------------------
 
-sub CGI_Cache_die
+sub die
 {
   $CALLED_WARN_OR_DIE = 1;
 
-  if ( defined $OLD_DIE )
+  # $OLD_DIE_SIG will be defined if the previously defined handler was set
+  # using signals. Otherwise it will have no effect.
+  if ($OLD_DIE_SIG)
   {
-    &$OLD_DIE( @_ );
+    &$OLD_DIE_SIG(@_);
   }
   else
   {
-    CORE::die( @_ );
+    CORE::die(@_);
   }
 }
 
@@ -344,16 +357,16 @@ sub _bind
 
     # Store the previous warn() and die() handlers, unless they are ours. (We
     # don't want to call ourselves if the user calls setup twice!)
-    if ( $main::SIG{__WARN__} ne \&CGI_Cache_warn )
+    if ( $main::SIG{__WARN__} ne \&warn )
     {
-      $OLD_WARN = $main::SIG{__WARN__} if $main::SIG{__WARN__} ne '';
-      $main::SIG{__WARN__} = \&CGI_Cache_warn;
+      $OLD_WARN_SIG = $main::SIG{__WARN__} if $main::SIG{__WARN__} ne '';
+      $main::SIG{__WARN__} = \&warn;
     }
 
-    if ( $main::SIG{__DIE__} ne \&CGI_Cache_die )
+    if ( $main::SIG{__DIE__} ne \&die )
     {
-      $OLD_DIE = $main::SIG{__DIE__} if $main::SIG{__DIE__} ne '';
-      $main::SIG{__DIE__} = \&CGI_Cache_die;
+      $OLD_DIE_SIG = $main::SIG{__DIE__} if $main::SIG{__DIE__} ne '';
+      $main::SIG{__DIE__} = \&die;
     }
   }
 }
@@ -370,12 +383,7 @@ sub _unbind
   {
     untie *$WATCHED_OUTPUT_HANDLE;
 
-    if (defined $OLD_STDOUT_TIE)
-    {
-      tie ( *$WATCHED_OUTPUT_HANDLE, "CGI::Cache::RestoreTie",
-        $OLD_STDOUT_TIE );
-      undef $OLD_STDOUT_TIE;
-    }
+    tie *$WATCHED_OUTPUT_HANDLE, 'Tie::Restore', $OLD_STDOUT_TIE;
 
     $CAPTURING = 0;
   }
@@ -384,17 +392,12 @@ sub _unbind
   {
     untie *$WATCHED_ERROR_HANDLE;
 
-    if (defined $OLD_STDERR_TIE)
-    {
-      tie ( *$WATCHED_ERROR_HANDLE, "CGI::Cache::RestoreTie",
-        $OLD_STDERR_TIE );
-      undef $OLD_STDERR_TIE;
-    }
+    tie *$WATCHED_ERROR_HANDLE, 'Tie::Restore', $OLD_STDERR_TIE;
 
-    $main::SIG{__DIE__} = $OLD_DIE;
-    undef $OLD_DIE;
-    $main::SIG{__WARN__} = $OLD_WARN; 
-    undef $OLD_WARN;
+    $main::SIG{__DIE__} = $OLD_DIE_SIG if defined $OLD_DIE_SIG;
+    undef $OLD_DIE_SIG;
+    $main::SIG{__WARN__} = $OLD_WARN_SIG if defined $OLD_WARN_SIG; 
+    undef $OLD_WARN_SIG;
   }
 }
 
@@ -428,18 +431,6 @@ sub buffer
 1;
 
 # ##########################################################################
-
-package CGI::Cache::RestoreTie;
-
-# If I wanted to be complete:
-# (*TIESCALAR, *TIEARRAY, *TIEHASH, *TIEHANDLE) =
-#   ( sub { $_[1] } ) x 4;
-
-sub TIEHANDLE { $_[1] }
-
-1;
-
-############################################################################
 
 package CGI::Cache::CatchSTDOUT;
 
@@ -545,9 +536,7 @@ __END__
 
 =head1 NAME
 
-CGI::Cache - Perl extension to help cache output of time-intensive CGI
-scripts so that subsequent visits to such scripts will not cost as
-much time.
+CGI::Cache - Perl extension to help cache output of time-intensive CGI scripts
 
 =head1 WARNING
 
@@ -574,7 +563,7 @@ Here's a simple example:
 
   # This should short-circuit the rest of the loop if a cache value is
   # already there
-  CGI::Cache::start();
+  CGI::Cache::start() or exit;
 
   print $cgi->header, "\n";
 
@@ -682,7 +671,7 @@ specially construct the key.
 
 For example, say we have a CGI script "airport" that computes the
 number of miles between major airports. You supply two airport codes
-to the script and it builds a web pages that reports the number of
+to the script and it builds a web page that reports the number of
 miles by air between those two locations. In addition, there is a
 third parameter which tells the script whether to write debugging
 information to a log file. Suppose the URL for Indianapolis Int'l to

@@ -1,0 +1,17 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         CGI-Cache
+version:      1.41
+version_from: lib/CGI/Cache.pm
+installdirs:  site
+requires:
+    Cache::SizeAwareFileCache:     0
+    File::Path:                    0
+    File::Spec:                    0
+    File::Spec::Functions:         0
+    IO::File:                      0
+    Storable:                      0
+    Tie::Restore:                  0
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.16

@@ -9,18 +9,21 @@ use File::Spec::Functions qw( tmpdir );
 use File::Cache;
 use Storable qw (freeze);
 
-$VERSION = '1.03';
+$VERSION = '1.10';
 
 # --------------------------------------------------------------------------
 
 # Globals
-use vars qw( $CAPTURE_STARTED $CACHE_KEY $ROOT_DIR $TIME_TO_LIVE $MODE
-             $CACHE $CAPTURED_OUTPUT $DEFAULT_CACHE_KEY $CACHE_PATH 
+use vars qw( $CAPTURE_STARTED $CAPTURING $CACHE_KEY $ROOT_DIR $TIME_TO_LIVE
+             $MODE $CACHE $CAPTURED_OUTPUT $DEFAULT_CACHE_KEY $CACHE_PATH
              $WROTE_TO_STDERR $CALLED_WARN_OR_DIE $OLD_STDOUT_TIE
              $OLD_STDERR_TIE $WARN $DIE );
 
-# 1 indicates that STDOUT is being captured
+# 1 indicates that we started capturing STDOUT
 $CAPTURE_STARTED = 0;
+
+# 1 indicates that we are currently capturing STDOUT
+$CAPTURING = 0;
 
 # The cache key
 $CACHE_KEY = undef;
@@ -70,7 +73,7 @@ $DIE = undef;
 # will not automatically be called if the script is exiting via a die
 # (detected by $? == 2).
 
-sub warn
+sub CGI_Cache_warn
 {
   $CALLED_WARN_OR_DIE = 1;
 
@@ -84,7 +87,9 @@ sub warn
   }
 }
 
-sub die
+# --------------------------------------------------------------------------
+
+sub CGI_Cache_die
 {
   $CALLED_WARN_OR_DIE = 1;
 
@@ -97,6 +102,8 @@ sub die
     CORE::die(@_);
   }
 }
+
+# --------------------------------------------------------------------------
 
 END
 {
@@ -128,20 +135,20 @@ sub setup
 
   $CACHE = new File::Cache($options);
 
-  die "File::Cache::new failed\n" unless defined $CACHE;
+  CORE::die "File::Cache::new failed\n" unless defined $CACHE;
 
   # Store the previous warn() and die() handlers, unless they are ours. (We
   # don't want to call ourselves if the user calls setup twice!)
-  if ($main::SIG{__WARN__} ne \&CGI::Cache::warn)
+  if ($main::SIG{__WARN__} ne \&CGI::Cache::CGI_Cache_warn)
   {
     $WARN = $main::SIG{__WARN__};
-    $main::SIG{__WARN__} = \&CGI::Cache::warn;
+    $main::SIG{__WARN__} = \&CGI::Cache::CGI_Cache_warn;
   }
 
-  if ($main::SIG{__DIE__} ne \&CGI::Cache::die)
+  if ($main::SIG{__DIE__} ne \&CGI::Cache::CGI_Cache_die)
   {
     $DIE = $main::SIG{__DIE__};
-    $main::SIG{__DIE__} = \&CGI::Cache::die;
+    $main::SIG{__DIE__} = \&CGI::Cache::CGI_Cache_die;
   }
 
   return 1;
@@ -178,7 +185,7 @@ sub _set_defaults
   unless (defined $options->{cache_key})
   {
     my $tmpdir = tmpdir() or
-      die("No tmpdir on this system.  Bugs to the authors of File::Spec");
+      CORE::die("No tmpdir on this system.  Bugs to the authors of File::Spec");
 
     $CACHE_PATH = File::Spec->catfile($tmpdir, $DEFAULT_CACHE_KEY);
 
@@ -212,6 +219,8 @@ sub set_key
 
 sub start
 {
+  return 0 unless defined $CACHE_KEY;
+
   # First see if a cached file already exists
   my $cached_output = $CACHE->get($CACHE_KEY);
 
@@ -233,6 +242,7 @@ sub start
     tie (*STDERR,'CGI::Cache::MonitorSTDERR');
 
     $CAPTURE_STARTED = 1;
+    $CAPTURING = 1;
   }
 
   1;
@@ -242,7 +252,7 @@ sub start
 
 sub stop
 {
-  return 0 unless ($CAPTURE_STARTED);
+  return 0 unless $CAPTURE_STARTED;
 
   my $cache_output = shift;
 
@@ -265,8 +275,53 @@ sub stop
   $CAPTURED_OUTPUT = '';
   $WROTE_TO_STDERR = 0;
   $CALLED_WARN_OR_DIE = 0;
+  $CACHE_KEY = undef;
 
   1;
+}
+
+# --------------------------------------------------------------------------
+
+sub pause
+{
+  # Nothing happens if capturing was not started, or you are not currently
+  # capturing
+  return 0 unless $CAPTURE_STARTED && $CAPTURING;
+
+  $CAPTURING = 0;
+
+  1;
+}
+
+# --------------------------------------------------------------------------
+
+sub continue
+{
+  # Nothing happens unless capturing was started and you are currently
+  # not capturing
+  return 0 unless $CAPTURE_STARTED && !$CAPTURING;
+
+  $CAPTURING = 1;
+
+  1;
+}
+
+# --------------------------------------------------------------------------
+
+sub invalidate_cache_entry
+{
+  $CACHE->remove($CACHE_KEY);
+
+  1;
+}
+
+# --------------------------------------------------------------------------
+
+sub buffer
+{
+  $CAPTURED_OUTPUT = join('',@_) if @_;
+
+  return $CAPTURED_OUTPUT;
 }
 
 # --------------------------------------------------------------------------
@@ -305,8 +360,12 @@ sub PRINT
 
   tie (*STDOUT,ref $CGI::Cache::OLD_STDOUT_TIE)
     if defined $CGI::Cache::OLD_STDOUT_TIE;
-  $CGI::Cache::CAPTURED_OUTPUT .= join '', @_;
+
+  $CGI::Cache::CAPTURED_OUTPUT .= join '', @_
+    if $CGI::Cache::CAPTURING;
+
   print @_;
+
   tie *STDOUT,__PACKAGE__;
 }
 
@@ -406,15 +465,30 @@ compatible with earlier versions.
 
   # CGI::Vars requires CGI version 2.50 or better
   CGI::Cache::set_key($query->Vars);
+  CGI::Cache::invalidate_cache_entry()
+    if $query->param('force_regenerate') eq 'true';
   CGI::Cache::start();
 
   print "Content-type: text/html\n\n";
 
   print <<EOF;
   <html><body>
+  <p>
   This prints to STDOUT, which will be cached.
   If the next visit is within 6 hours, the cached STDOUT
   will be served instead of executing these 'prints'.
+  </p>
+  EOF
+
+  CGI::Cache::pause();
+
+  print <<EOF;
+  <p>This is not cached.</p>
+  EOF
+
+  CGI::Cache::continue();
+
+  print <<EOF;
   </body></html>
   EOF
 
@@ -553,8 +627,14 @@ its content if it exists, then exits. If the cache file does not exist,
 then it captures the STDOUT filehandle and allows the CGI script's normal
 STDOUT be redirected to the cache file.
 
-=item stop( [<cache_output> = 1] );
-    <cache_output> - do we write the captured STDOUT to a  cache file?
+This function returns 0 if you haven't yet defined your cache key. It causes
+your program to exit if it finds valid cached data, and returns 1 if it has
+determined that you need to cache and has successfully captured STDOUT and
+STDERR.
+
+
+=item $status = stop( [<cache_output>] );
+    <cache_output> - do we write the captured STDOUT to a cache file?
 
 The stop() routine tells us to stop capturing STDOUT.  The argument
 "cache_output" tells us whether or not to store the captured output in
@@ -570,9 +650,43 @@ if not, it will call it. Note that CGI::Cache will detect whether your
 script is exiting as the result of an error, and will B<not> cache
 the output in this case.
 
+This function returns 0 if capturing has not been started, and 1 otherwise.
+
 =back
 
+
+=item $status = pause();
+
+Temporarily disable caching of output sent to STDOUT. Returns 0 if CGI::Cache
+is not currently caching output, and 1 otherwise.
+
+
+=item $status = continue();
+
+Enable caching of output sent to STDOUT. Returns 0 if caching is not currently
+enabled, and 1 otherwise.
+
+
+=item $scalar = buffer( [<content>] );
+
+The buffer method gives direct access to the buffer of cached output. The
+optional <content> parameter allows you to set the contents using a list or
+scalar. (The list will be joined into a scalar and stored in the buffer.) The
+return value is the contents of the buffer after any changes.
+
+
+=item $status = invalidate_cache_entry();
+
+Forces the cache entry to be invalidated. It is always successful, and always
+returns 1. It doesn't make much sense to call this after calling start(), as
+CGI::Cache will have already determined that the cache entry is invalid.
+
+
 =head1 BUGS
+
+This module is currently incompatible with other modules that tie STDOUT or
+STDERR, such as CGI::Fast (fastcgi). Compatibility is planned for a future
+release.
 
 Contact david@coppit.org for bug reports and suggestions.
 

@@ -1,5 +1,10 @@
 Revision history for Perl extension CGI::Cache.
 
+1.10  Jul 30 11:08:00 EST 2001
+  - Fixed ambiguous die() warnings under Perl 5.6
+  - Added pause(), continue(), invalidate_cache_entry(), and buffer() methods.
+  - Added test cases for new methods.
+
 1.03  Mon Jan 29 21:56:50 EST 2001
   - Now prevents caching of output for applications which call a $SIG{__DIE__}
     that doesn't print to STDERR. An example of this type of application is

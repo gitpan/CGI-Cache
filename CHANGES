@@ -1,8 +1,13 @@
+Version 1.4141: wed Dec 22 2004
+- Fixed a bug in timed testing (Thanks to <nothingmuch@woobling.org> for the
+  bug report.)
+
 Version 1.4140: Tue Dec 21 2004
 - Improved test failure reporting
 - Fixed version numbers, which were incompatible with some modules. (Thanks to
   Tassilo von Parseval <tassilo.von.parseval@rwth-aachen.de> for the bug
   report)
+- Fixed some warnings and bugs in the two test cases.
 
 Version 1.41.3: Tue Sep 21 2004
 - Broke up test scripts

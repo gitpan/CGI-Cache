@@ -44,7 +44,7 @@ my $expected_cached = '<UNDEF>';
 my $message = 'die() prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 
@@ -81,7 +81,7 @@ my $expected_cached = '<UNDEF>';
 my $message = 'Print to STDERR prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 
@@ -120,7 +120,7 @@ my $expected_cached = '<UNDEF>';
 my $message = 'redirected die() prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 
@@ -161,7 +161,7 @@ my $expected_cached = '<UNDEF>';
 my $message = 'die() (with filehandles) prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 

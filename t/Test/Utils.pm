@@ -26,11 +26,12 @@ sub Run_Script
   my $expected_stderr = shift;
   my $expected_cached = shift;
   my $message = shift;
+  my $clear_cache = shift;
 
   local $Test::Builder::Level = 2;
 
   Write_Script($test_script_name,$script);
-  Setup_Cache($test_script_name,$script);
+  Setup_Cache($test_script_name,$script,$clear_cache);
 
   # Save STDERR and redirect temporarily to nothing. This will prevent the
   # test script from emitting output to STDERR
@@ -121,6 +122,7 @@ sub Setup_Cache
 {
   my $test_script_name = shift;
   my $script = shift;
+  my $clear_cache = shift;
 
   # Setup the CGI::Cache the same way the test script does so that we
   # can clear the cache and then look at the cached info after the run.
@@ -133,7 +135,7 @@ sub Setup_Cache
   eval "CGI::Cache::set_key($cache_key)";
 
   # Clear the cache to start the test
-  $CGI::Cache::THE_CACHE->clear();
+  $CGI::Cache::THE_CACHE->clear() if $clear_cache;
 }
 
 # ----------------------------------------------------------------------------

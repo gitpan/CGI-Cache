@@ -45,7 +45,7 @@ my $expected_cached = "Test output 1\n";
 my $message = 'Disabled output';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 

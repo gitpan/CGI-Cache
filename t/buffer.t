@@ -45,7 +45,7 @@ my $expected_cached = "Test output 1\n";
 my $message = 'read buffer()';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 
@@ -77,7 +77,7 @@ my $expected_cached = "Replacement output 1\nTest output 2\n";
 my $message = 'write buffer()';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 

@@ -29,7 +29,7 @@ sub Time_Script
   my $t1 = time;
   
   Run_Script($test_script_name, $script, $expected_stdout, undef, undef,
-    "$message (first run)");
+    "$message (first run)", 1);
   
   $t1 = time - $t1;
     
@@ -38,7 +38,7 @@ sub Time_Script
   my $t2 = time;
 
   Run_Script($test_script_name, $script, $expected_stdout, undef, undef,
-    "$message (second run)");
+    "$message (second run)", 0);
 
   $t2 = time - $t2;
 
@@ -47,7 +47,7 @@ sub Time_Script
   SKIP: {
     skip "Both runs were too fast to compare", 1 if $t2 == 0 && $t1 == 0;
 
-    ok($t2 == 0 || $t1/$t2 < 1.5, "$message: Caching run was faster");
+    ok($t2 == 0 || $t1/$t2 >= 1.5, "$message: Caching run was faster");
   }
 }
 
@@ -64,7 +64,7 @@ CGI::Cache::start() or exit;
 
 print "Test output 1\n";
 
-sleep 2;
+sleep 3;
 EOF
 
 # Clean up
@@ -88,7 +88,7 @@ CGI::Cache::set_key( ['test key 2',1,2] );
 CGI::Cache::start() or exit;
 
 print "Test output 2\n";
-sleep 2;
+sleep 3;
 EOF
 
 # Clean up
@@ -111,7 +111,7 @@ CGI::Cache::start() or exit;
 
 print "Test output 1\n";
 
-sleep 2;
+sleep 3;
 EOF
 
 # Clean up

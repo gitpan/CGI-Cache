@@ -47,7 +47,7 @@ EOF
   my $message = 'invalidate_cache_entry() setup';
 
   Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-    $expected_cached, $message);
+    $expected_cached, $message, 1);
 }
 
 # Now run a script that invalidates the previous cached content before
@@ -78,7 +78,7 @@ EOF
   my $message = 'invalidate_cache_entry() operation';
 
   Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-    $expected_cached, $message);
+    $expected_cached, $message, 1);
 }
 
 $script_number++;

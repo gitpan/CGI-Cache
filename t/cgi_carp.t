@@ -55,7 +55,7 @@ my $expected_cached = '<UNDEF>';
 my $message = "CGI::Carp not caching with default attributes";
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-$expected_cached, $message);
+$expected_cached, $message, 1);
 
 $script_number++;
 }
@@ -89,7 +89,7 @@ my $expected_cached = "Good day to live\n";
 my $message = "CGI::Carp caching with default attributes";
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-$expected_cached, $message);
+$expected_cached, $message, 1);
 
 $script_number++;
 }

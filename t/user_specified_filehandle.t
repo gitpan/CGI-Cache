@@ -53,7 +53,7 @@ print "RESULTS: $results";
 EOF
 
 Write_Script($test_script_name,$script);
-Setup_Cache($test_script_name,$script);
+Setup_Cache($test_script_name,$script,1);
 
 my $expected_stdout = "RESULTS: Test output 1\n";
 my $expected_stderr = '';
@@ -61,7 +61,7 @@ my $expected_cached = "Test output 1\n";
 my $message = 'Output to non-STDOUT filehandle';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 
@@ -107,7 +107,7 @@ my $expected_cached = "Test output 1\n";
 my $message = 'Monitor non-STDOUT filehandle';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
-  $expected_cached, $message);
+  $expected_cached, $message, 1);
 
 $script_number++;
 

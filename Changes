@@ -1,25 +1,5 @@
 Revision history for Perl extension CGI::Cache.
 
-1.00  Thu Jun 25 20:47:30 EST 1998
-	- Added routine ExpireLRU() per suggestion from Daniel LaLiberte.
-
-0.99  Wed Jun 17 20:06:08 EST 1998
-	- Added some modifications to the docs. There is a BUGS
-	  piece of info wrt signals that kill your process and
-	  make the module misbehave.
-	- I added the Copyright info and license info as suggested
-	  by the docs at /CPAN/modules/04pause.html. Those are
-	  agreeable terms.
-	- misc. formatting of docs.
-	- hopefully ready for submission to PAUSE now... :-)
-
-0.98  Tue Jun  2 17:45:30 EST 1998
-	- Took my existing CGI caching work and rolled it into
-	  this module, hoping to get a first stab at working
-	  distribution. I'm using a "closer-to 1.0" version,
-	  as the guts of this module have already been around
-	  and working for a while.
-
-0.01  Thu May 28 18:07:00 1998
-	- original version; created by h2xs 1.18
+0.01  Thu Jun 15 10:24:08 2000
+	- original version; created by h2xs 1.19
 

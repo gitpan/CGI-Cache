@@ -4,4 +4,5 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'	=> 'CGI::Cache',
     'VERSION_FROM' => 'Cache.pm', # finds $VERSION
+    'PREREQ_PM'   => { 'File::Cache' => 0, 'LWP' => 0 }
 );

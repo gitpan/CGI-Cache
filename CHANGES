@@ -1,3 +1,12 @@
+Version 1.4200 Mon Mar 14 2005:
+- Fixed a bug where the user-specified max cache size was not being honored,
+  and an unbounded cache was used instead. (Thanks to Christoph C. Cemper
+  <christoph@cemper.com> for finding the bug and providing the fix.)
+- Fixed a bug where the default_expires_in time interval was not being set
+  correctly.
+- Changed the default behavior of default_expires_in so that cache entries
+  never expire.
+
 Version 1.4142:
 - Fixed a bug in t/timed_tests.t that would be revealed by Perl 5.6.x. (Thanks
   to Sebastien Aperghis-Tramoni <saper@cpan.org> for the bug report and

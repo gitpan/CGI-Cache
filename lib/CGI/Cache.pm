@@ -10,7 +10,7 @@ use Cache::SizeAwareFileCache;
 use Tie::Restore;
 use Storable qw( freeze );
 
-$VERSION = sprintf "%d.%02d%02d", q/1.41.42/ =~ /(\d+)/g;
+$VERSION = sprintf "%d.%02d%02d", q/1.42.0/ =~ /(\d+)/g;
 
 # --------------------------------------------------------------------------
 
@@ -21,8 +21,6 @@ use vars qw( $THE_CAPTURED_OUTPUT $OUTPUT_HANDLE $ERROR_HANDLE
 # Global because test script needs them. They really should be lexically
 # scoped to this package.
 use vars qw( $THE_CACHE $THE_CACHE_KEY $CACHE_PATH );
-
-my $DEFAULT_EXPIRES_IN = 24 * 60 * 60;
 
 # 1 indicates that we started capturing output
 my $CAPTURE_STARTED = 0;
@@ -215,16 +213,16 @@ sub _set_cache_defaults
   }
 
   # Set default value for expires_in
-  $cache_options->{expires_in} = $DEFAULT_EXPIRES_IN
+  $cache_options->{default_expires_in} = $Cache::Cache::EXPIRES_NEVER
     unless defined $cache_options->{default_expires_in};
-
 
   # Set default value for cache root
   $cache_options->{cache_root} = _compute_default_cache_root()
     unless defined $cache_options->{cache_root};
 
   # Set default value for max_size
-  $cache_options->{max_size} = $Cache::SizeAwareFileCache::NO_MAX_SIZE;
+  $cache_options->{max_size} = $Cache::SizeAwareFileCache::NO_MAX_SIZE
+    unless defined $cache_options->{max_size};
 
   return $cache_options;
 }
@@ -735,8 +733,8 @@ by $ENV{SCRIPT_NAME}, or $0 if $ENV{SCRIPT_NAME} is not defined).
 =item $cache_options{default_expires_in}
 
 If the "default_expires_in" option is set, all objects in this cache will be
-cleared after that number of seconds. If expires_in is not set, the web pages
-will never expire. The default is 24 hours.
+cleared after that number of seconds. If this option is not provided, the
+cache entry will never expire by default.
 
 =item $cache_options{max_size}
 

@@ -14,16 +14,16 @@ version_from    ('lib/CGI/Cache.pm');
 license         ('gpl');
 
 requires        (
-                  'File::Path',
-                  'Tie::Restore',
-                  'File::Spec',
-                  'Cache::Cache',
-                  'Storable',
+                  'File::Path' => 0,
+                  'Tie::Restore' => 0,
+                  'File::Spec' => 0,
+                  'Cache::Cache' => 0,
+                  'Storable' => 0,
                 );
 
 include         ('ExtUtils/AutoInstall.pm');
-auto_install    ( -default => 0 );
 
+auto_install    ( );
 WriteAll();
 
 print "\n", '-'x78, "\n\n";

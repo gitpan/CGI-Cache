@@ -6,9 +6,9 @@ that subsequent visits to such scripts will not take as much time.
 
 NEW IN THIS VERSION
 
-Version 1.41.1:
-- Fixed module and changelog bug, where clear_cache() was clear()
-- Updated distribution to use Module::Install
+Version 1.41.2: Thu Sep 16 2004
+- Fixed broken dependency specification in Makefile.PL
+- Added missing inc/ files
 
 
 MODULE DEPENDENCIES

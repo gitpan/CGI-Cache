@@ -10,7 +10,7 @@ use Cache::SizeAwareFileCache;
 use Tie::Restore;
 use Storable qw( freeze );
 
-$VERSION = '1.41.1';
+$VERSION = '1.41.2';
 
 # --------------------------------------------------------------------------
 

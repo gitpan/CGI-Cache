@@ -7,16 +7,32 @@ use FileHandle;
 
 use vars qw( @EXPORT @ISA $VERSION );
 
-$VERSION = sprintf "%d.%02d%02d", q/0.10.0/ =~ /(\d+)/g;
+$VERSION = sprintf "%d.%02d%02d", q/0.10.1/ =~ /(\d+)/g;
 
 @ISA = qw( Exporter );
-@EXPORT = qw( Run_Script Write_Script Setup_Cache );
+@EXPORT = qw( Run_Script Write_Script Setup_Cache $set_env $single_quote
+              $command_separator );
+
+use vars qw( $single_quote $command_separator $set_env );
+
+if ($^O eq 'MSWin32')
+{
+  $set_env = 'set';
+  $single_quote = '"';
+  $command_separator = '&';
+}
+else
+{
+  $set_env = '';
+  $single_quote = "'";
+  $command_separator = '';
+}
 
 # ---------------------------------------------------------------------------
 
-# If any of the expected_ variables are undef, they won't be checked. For
-# $expected_cached, use the string "<UNDEF>" to actually check for a value of
-# undef.
+# This function executes three tests, one for each of the expected_ variables.
+# If any of the expected_ variables are the string "<SKIP>", any value will be
+# accepted.
 
 sub Run_Script
 {
@@ -41,7 +57,27 @@ sub Run_Script
     open STDERR,">STDERR-redirected"
       or die "Can't redirect STDERR to STDERR-redirected: $!\n";
 
-    my $script_results = `$^X $test_script_name`;
+    my $script_results;
+    
+    {
+      my @standard_inc = split /###/, `$^X -e '\$" = "###";print "\@INC"'`;
+      my @extra_inc;
+      foreach my $inc (@INC)
+      {
+        push @extra_inc, "$single_quote$inc$single_quote"
+          unless grep { /^$inc$/ } @standard_inc;
+      }
+
+      if (@extra_inc)
+      {
+        local $" = ' -I';
+        $script_results = `$^X -I@extra_inc $test_script_name`;
+      }
+      else
+      {
+        $script_results = `$^X $test_script_name`;
+      }
+    }
     
     unlink $test_script_name;
 
@@ -50,7 +86,12 @@ sub Run_Script
     # Check the answer that the test generated
     if (defined $expected_stdout)
     {
-      if (ref $expected_stdout eq 'Regexp')
+      if ($expected_stdout eq '<SKIP>')
+      {
+        $script_results = '<UNDEF>' unless defined $script_results;
+        ok(1, "$message: Skipping results output check for string \"$script_results\"");
+      }
+      elsif (ref $expected_stdout eq 'Regexp')
       {
         like($script_results, $expected_stdout, "$message: Computing the right output");
       }
@@ -58,6 +99,10 @@ sub Run_Script
       {
         is($script_results, $expected_stdout, "$message: Computing the right output");
       }
+    }
+    else
+    {
+      ok(!defined($script_results), "$message: Undefined results");
     }
   }
 
@@ -70,7 +115,12 @@ sub Run_Script
 
     if (defined $expected_stderr)
     {
-      if (ref $expected_stderr eq 'Regexp')
+      if ($expected_stderr eq '<SKIP>')
+      {
+        $script_errors = '<UNDEF>' unless defined $script_errors;
+        ok(1, "$message: Skipping error output check for string \"$script_errors\"");
+      }
+      elsif (ref $expected_stderr eq 'Regexp')
       {
         like($script_errors, $expected_stderr, "$message: Computing the right errors");
       }
@@ -79,6 +129,10 @@ sub Run_Script
         is($script_errors, $expected_stderr, "$message: Computing the right errors");
       }
     }
+    else
+    {
+      ok(!defined($script_errors), "$message: Undefined errors");
+    }
   }
 
   {
@@ -86,9 +140,10 @@ sub Run_Script
 
     if (defined $expected_cached)
     {
-      if ($expected_cached eq '<UNDEF>')
+      if ($expected_cached eq '<SKIP>')
       {
-        ok(!defined($cached_results), "$message: Undefined cached data");
+        $cached_results = '<UNDEF>' unless defined $cached_results;
+        ok(1, "$message: Skipping cached output check for string \"$cached_results\"");
       }
       elsif (ref $expected_cached eq 'Regexp')
       {
@@ -98,6 +153,10 @@ sub Run_Script
       {
         is($cached_results, $expected_cached, "$message: Correct cached data");
       }
+    }
+    else
+    {
+      ok(!defined($cached_results), "$message: Undefined cached data");
     }
   }
 

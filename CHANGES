@@ -1,3 +1,9 @@
+Version 1.4142:
+- Fixed a bug in t/timed_tests.t that would be revealed by Perl 5.6.x. (Thanks
+  to Sebastien Aperghis-Tramoni <saper@cpan.org> for the bug report and
+  debugging assistance.)
+- Improved test reporting for, and robustness of, t/timed_tests.t
+
 Version 1.4141: wed Dec 22 2004
 - Fixed a bug in timed testing (Thanks to <nothingmuch@woobling.org> for the
   bug report.)

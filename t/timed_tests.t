@@ -1,4 +1,4 @@
-use Test::More tests => 9;
+use Test::More tests => 21;
 
 use strict;
 use lib 't';
@@ -8,7 +8,7 @@ use CGI::Cache;
 
 use vars qw( $VERSION );
 
-$VERSION = sprintf "%d.%02d%02d", q/0.10.0/ =~ /(\d+)/g;
+$VERSION = sprintf "%d.%02d%02d", q/0.10.2/ =~ /(\d+)/g;
 
 # ----------------------------------------------------------------------------
 
@@ -27,8 +27,9 @@ sub Time_Script
   
   #  First run should take longer & create cache file
   my $t1 = time;
-  
-  Run_Script($test_script_name, $script, $expected_stdout, undef, undef,
+
+  # Three tests in Run_Script
+  Run_Script($test_script_name, $script, $expected_stdout, '', '<SKIP>',
     "$message (first run)", 1);
   
   $t1 = time - $t1;
@@ -37,7 +38,8 @@ sub Time_Script
   #  Second run should be short, but return output from cache
   my $t2 = time;
 
-  Run_Script($test_script_name, $script, $expected_stdout, undef, undef,
+  # Three tests in Run_Script
+  Run_Script($test_script_name, $script, $expected_stdout, '', '<SKIP>',
     "$message (second run)", 0);
 
   $t2 = time - $t2;
@@ -53,9 +55,8 @@ sub Time_Script
 
 # ---------------------------------------------------------------------------
 
-# Test 1-4: caching with default attributes
-Time_Script(<<EOF,"Test output 1\n","Default attributes");
-use lib '../blib/lib';
+# Test 1-7: caching with default attributes
+Time_Script(<<'EOF',"Test output 1\n","Default attributes");
 use CGI::Cache;
 
 CGI::Cache::setup({ cache_options => { cache_root => 't/CGI_Cache_tempdir' } });
@@ -72,10 +73,9 @@ rmtree 't/CGI_Cache_tempdir';
 
 # ----------------------------------------------------------------------------
 
-# Test 5-8: caching with some custom attributes, and with a complex data
+# Test 8-14: caching with some custom attributes, and with a complex data
 # structure
-Time_Script(<<EOF,"Test output 2\n","Custom attributes");
-use lib '../blib/lib';
+Time_Script(<<'EOF',"Test output 2\n","Custom attributes");
 use CGI::Cache;
 
 CGI::Cache::setup( { cache_options => { 
@@ -88,6 +88,7 @@ CGI::Cache::set_key( ['test key 2',1,2] );
 CGI::Cache::start() or exit;
 
 print "Test output 2\n";
+
 sleep 3;
 EOF
 
@@ -96,9 +97,8 @@ rmtree 't/CGI_Cache_tempdir';
 
 # ----------------------------------------------------------------------------
 
-# Test 9-12: caching with default attributes. (set handles)
-Time_Script(<<EOF,"Test output 1\n","Set handles");
-use lib '../blib/lib';
+# Test 15-21 caching with default attributes. (set handles)
+Time_Script(<<'EOF',"Test output 1\n","Set handles");
 use CGI::Cache;
 
 CGI::Cache::setup( { cache_options => { cache_root => 't/CGI_Cache_tempdir' },

@@ -6,8 +6,10 @@ that subsequent visits to such scripts will not take as much time.
 
 NEW IN THIS VERSION
 
-Version 1.4141: wed Dec 22 2004
-- Fixed a bug in timed testing 
+Version 1.4142: Sun Feb 6 2005
+- Fixed a bug in t/timed_tests.t that would be revealed by Perl 5.6.x. (Thanks
+  to Sebastien Aperghis-Tramoni for the bug report and debugging assistance.)
+- Improved test reporting for, and robustness of, t/timed_tests.t
 
 
 MODULE DEPENDENCIES

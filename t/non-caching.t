@@ -40,7 +40,7 @@ EOF
 
 my $expected_stdout = "Test output 1\n";
 my $expected_stderr = "Forced die!\n";
-my $expected_cached = '<UNDEF>';
+my $expected_cached = undef;
 my $message = 'die() prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
@@ -77,7 +77,7 @@ EOF
 
 my $expected_stdout = "Test output 1\n";
 my $expected_stderr = "STDERR!\n";
-my $expected_cached = '<UNDEF>';
+my $expected_cached = undef;
 my $message = 'Print to STDERR prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
@@ -116,7 +116,7 @@ EOF
 
 my $expected_stdout = "Test output 1\nSTDERR!\n";
 my $expected_stderr = "";
-my $expected_cached = '<UNDEF>';
+my $expected_cached = undef;
 my $message = 'redirected die() prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,
@@ -157,7 +157,7 @@ EOF
 
 my $expected_stdout = "Test output 1\n";
 my $expected_stderr = "Forced die!\n";
-my $expected_cached = '<UNDEF>';
+my $expected_cached = undef;
 my $message = 'die() (with filehandles) prevents caching';
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,

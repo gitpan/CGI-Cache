@@ -51,7 +51,7 @@ my ($short_script_name) = $test_script_name =~ /.*\/(.*)$/;
 
 my $expected_stdout = qr/Content-type: text\/html.*<pre>Good day to die/si;
 my $expected_stderr = qr/\[[^\]]+:[^\]]+\] $short_script_name: Good day to die/si;
-my $expected_cached = '<UNDEF>';
+my $expected_cached = undef;
 my $message = "CGI::Carp not caching with default attributes";
 
 Run_Script($test_script_name, $script, $expected_stdout, $expected_stderr,

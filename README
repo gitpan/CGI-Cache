@@ -1,4 +1,4 @@
-CGI::Cache 1.04
+CGI::Cache 1.21
 
 Perl extension to help cache output of time- intensive CGI scripts so that
 subsequent visits to such scripts will not cost as much time.
@@ -14,28 +14,11 @@ WARNING! The interface changed slightly in version 1.20.
 
 NEW IN THIS VERSION
 
-1.20
-- Added a FORCE_INSTALL option to Makefile.PL to skip warnings about possibly
-  incompatible versions.
-- Many thanks to Benjamin Goldberg for helping to fix the tie'ing of STDOUT so
-  that it works well with FastCGI. CGI::Cache is now fully compatible with
-  FastCGI and mod_perl, and no extra work needs to be done on the part of the
-  user. Thanks also to "doggy" for raising the issue.
-- Migrated over to Cache::Cache from File::Cache. The interface has changed
-  slightly, and is not fully backward compatible with previous versions.
-- Changed test script to use the same perl interpreter for testing as the one
-  that was used to run the test script itself. (Thanks to Honza Pazdziora for
-  the patch.)
-- Added features to explictly identify the handles to monitor and the handles
-  upon which to output. This allows CGI::Cache to interoperate better with
-  other modules which attempt to bind to STDOUT and STDERR, and allows the
-  user to cache output to files.
-- Side-effects of CGI::Cache (tie'ing of handles, rebinding of warn() and
-  die()) now only occur when CGI::Cache is actually caching output.
-- CGI::Cache::start() now returns 0 instead of exiting after cached output is
-  printed. This provides better compatibility with persistent CGI scripts
-  implemented using mod_perl or FastCGI.
-- Added several new test cases
+1.21
+- Fixed a documentation bug in the synopsis. (Thanks to Ken for the report.)
+- Added a long-overdue credit to Terrance Brannon in the authors section of
+  the POD. He had donated me the use of the CGI::Cache namespace, and kindly
+  allowed the current codebase to replace his.
 
 
 MODULE DEPENDENCIES

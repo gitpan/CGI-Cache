@@ -9,7 +9,7 @@ use File::Spec::Functions qw( tmpdir );
 use Cache::SizeAwareFileCache;
 use Storable qw( freeze );
 
-$VERSION = '1.20';
+$VERSION = '1.21';
 
 # --------------------------------------------------------------------------
 
@@ -541,11 +541,13 @@ version 1.20.
   # Set up a cache in /tmp/CGI_Cache/demo_cgi, with publicly
   # unreadable cache entries, a maximum size of 20 megabytes,
   # and a time-to-live of 6 hours.
-  CGI::Cache::setup( { cache_root => '/tmp/CGI_Cache',
-                       namespace => 'demo_cgi',
-                       directory_umask => 077,
-                       max_size => 20 * 1024 * 1024,
-                       default_expires_in => '6 hours',
+  CGI::Cache::setup( { cache_options =>
+                       { cache_root => '/tmp/CGI_Cache',
+                         namespace => 'demo_cgi',
+                         directory_umask => 077,
+                         max_size => 20 * 1024 * 1024,
+                         default_expires_in => '6 hours',
+                       }
                      } );
 
   # CGI::Vars requires CGI version 2.50 or better
@@ -759,11 +761,10 @@ cache the output.  A cache_output argument of 0 is used in this case.
 
 You don't have to call the stop() routine if you simply want to catch
 all output that the script generates for the duration of its
-execution.  If the script exits without calling stop(), then the END{}
-block of the CGI::cache will check to see of stop() has been called,
-and if not, it will call it. Note that CGI::Cache will detect whether
-your script is exiting as the result of an error, and will B<not>
-cache the output in this case.
+execution.  If the script exits without calling stop(), CGI::Cache
+will call it for you upon program exit. Note that CGI::Cache will
+detect whether your script is exiting as the result of an error, and
+will B<not> cache the output in this case.
 
 This function returns 0 if capturing has not been started (by a call
 to start()), and 1 otherwise.
@@ -776,7 +777,7 @@ is not currently caching output, and 1 otherwise.
 
 =item $status = continue();
 
-Enable caching of output.  This function returns 0 if capturing has
+Re-enable caching of output.  This function returns 0 if capturing has
 not been started (by a call to start()) or if pause() was not
 previously called, and 1 otherwise.
 
@@ -806,6 +807,9 @@ Contact david@coppit.org for bug reports and suggestions.
 
 The original code (written before October 1, 2000) was written by Broc
 Seib, and is copyright (c) 1998 Broc Seib. All rights reserved. 
+
+The CGI::Cache namespace was donated by Terrance Brannon, who kindly allowed
+the current codebase to replace his.
 
 Maintenance of CGI::Cache is now being done by David Coppit
 (david@coppit.org).

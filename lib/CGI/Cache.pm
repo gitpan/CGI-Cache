@@ -10,7 +10,7 @@ use Cache::SizeAwareFileCache;
 use Tie::Restore;
 use Storable qw( freeze );
 
-$VERSION = '1.41';
+$VERSION = '1.41.1';
 
 # --------------------------------------------------------------------------
 
@@ -412,7 +412,7 @@ sub invalidate_cache_entry
 
 # --------------------------------------------------------------------------
 
-sub clear
+sub clear_cache
 {
   $CGI::Cache::THE_CACHE->clear();
 

@@ -14,6 +14,8 @@ END
   # Clean up our cache
   Cache::SizeAwareFileCache::Clear($CGI::Cache::CACHE_PATH)
     if defined $Cache::SizeAwareFileCache::VERSION;
+  # To prevent a warning
+  $CGI::Cache::CACHE_PATH .= '';
 }
 
 use File::Path;
@@ -918,10 +920,10 @@ sub {
       unless $script_results =~ /Content-type: text\/html.*<pre>Good day to die/si;
 
     {
-      open error, "STDERR-redirected";
+      open ERROR, "STDERR-redirected";
       local $/ = undef;
-      my $script_errors = <error>;
-      close error;
+      my $script_errors = <ERROR>;
+      close ERROR;
 
       die "Test script didn't generate correct error output."
         unless $script_errors =~ /\[[^\]]+:[^\]]+\] $test_script: Good day to die/;

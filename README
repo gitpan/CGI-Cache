@@ -1,107 +1,89 @@
-CGI::Cache
+CGI::Cache - Perl extension to help cache output of time-intensive CGI scripts
 
-Perl extension to help cache output of time- intensive CGI scripts so that
-subsequent visits to such scripts will not cost as much time.
-
-
-WARNING! The interface in this version of CGI::Cache is incompatible
-with the interface of version 1.00 and earlier. You will need to
-modify any existing scripts you have to use the new interface if you
-install this version.
+CGI::Cache is an easy-to-use module for automatically caching CGI output so
+that subsequent visits to such scripts will not take as much time.
 
 
 NEW IN THIS VERSION
 
-1.41
-- Now uses Tie::Restore instead my own version. It's a trivial dependency, but
-  reuse is good, right?
-- Updated Makefile.PL
-- Fixed an incompatibility with modules like CGI::Carp that override
-  CORE::GLOBALS::die, a new feature since about perl 5.6.1
-- Fixed uninitialized variable warnings
-- Fixed documentation typo
+Version 1.41.1:
+- Fixed module and changelog bug, where clear_cache() was clear()
+- Updated distribution to use Module::Install
 
 
 MODULE DEPENDENCIES
 
-You will need to install Cache::Cache to use CGI::Cache. You can get the
-latest version from:
+To use this module, you will need to install:
 
-  http://www.perl.com/CPAN/authors/id/D/DC/DCLINTON/
+- File::Path
+- Tie::Restore
+- File::Spec
+- Cache::Cache
+- Storable
 
-Alternatively, installation of Cache::Cache and its dependencies can be done
-automatically using the CPAN module:
-
-  perl -MCPAN -e 'install Cache::Cache'
+You should be prompted to install this module automatically when you run "perl
+Makefile.PL".
 
 
 INSTALLATION
 
-To install this package, change to the directory where you
-unarchived this distribution and type the following:
+To install this package, change to the directory where you unarchived this
+distribution and type the following:
 
-	perl Makefile.PL
-	make
-	make test
-	make install
+  perl Makefile.PL
+  make
+  make test
+  make install
 
-You can also use "perl Makefile.PL FORCE_INSTALL" to avoid prompts which ask
-if it is okay to install the new version even if it is potentially
-incompatible with scripts written using the older version found on the
-system.
+You will be prompted for installation locations. You can suppress these
+prompts by specifying either "PREFIX=/installation/path" (for installation
+into a custom location), "INSTALLDIRS=site" (for installation into
+site-specific Perl directories), or "INSTALLDIRS=perl" (for installation into
+standard Perl directories).
 
-During the 'make test', there are some tests that take a while
-longer to run. While testing that caching is working, CPU times
-are being recorded on some badly written code to see that
-performance will actually be increased on subsequent visits.
-Don't panic. It may take a couple of minutes to run, depending
-on your system.
+If you make the installation into your own directory, then remember that you
+must tell perl where to search for modules before trying to 'use' them. For
+example:
 
-If you do not have root access on your machine, then you may
-not have the ability to install this module in the standard
-perl library path. You may direct the installation into your
-own space, e.g.,
+  use lib '/home/userid/lib';
+  use CGI::Cache;
 
-	perl Makefile.PL LIB='/home/userid/lib'
-
-or perhaps the entire installation, e.g.,
-
-	perl Makefile.PL PREFIX='/home/userid'
-
-If you make the installation into your own directory, then
-remember that you must tell perl where to search for modules
-before trying to 'use' them. For example:
-
-	use lib '/home/userid/lib';
-	use CGI::Cache;
+During the 'make test', there are some tests that take a while longer to run.
+While testing that caching is working, CPU times are being recorded on some
+slow code to see that performance will actually be increased on subsequent
+visits.  Don't panic. It may take a couple of minutes to run, depending on
+your system.
 
 
-NOTES
+DOCUMENTATION
 
-Please let me know if you are using this module. Tell me what
-bugs you find or what can be done to improve it.
+Just "perldoc CGI::Cache". After installation on Unix systems,
+you can also do "man CGI::Cache".
 
 
 HOMEPAGE
-
+  
 Visit http://cgicache.sourceforge.net/ for the latest version, mailing
 lists, discussion forums, CVS access, and more.
 
 
+REPORTING BUGS
+   
+You can report bugs by filing a bug report at the project homepage. 
+
+
 COPYRIGHT
 
-Copyright (c) 1998-Sep 1 2000 Broc Seib. Copyright (c) Sep 1 2000-2001 David
-Coppit. All rights reserved.
+Copyright (c) 1998-Sep 1 2000 Broc Seib. Copyright (c) Sep 1 2000-2004 David
+Coppit. All rights reserved, save those granted by the license.
 
 
 LICENSE
 
-This code is distributed under the GNU General Public License (GPL).
-See http://www.opensource.org/gpl-license.html and
-http://www.opensource.org/.
+This code is distributed under the GNU General Public License (GPL).  See
+the file LICENSE included in the distribution.
 
 
 AUTHOR
 
-David Coppit, david@coppit.org (current maintainer)
-Broc Seib, bseib@purdue.edu (original author)
+David Coppit <david@coppit.org>

@@ -6,7 +6,7 @@ use vars qw($VERSION $G);	# @ISA @EXPORT @EXPORT_OK);
 use File::Path;
 
 
-$VERSION = '0.99';
+$VERSION = '1.00';
 
 
 BEGIN {
@@ -154,6 +154,32 @@ sub Expire {
 	my $file = _pure_cachefile_name();
 	return unlink $file if (-e $file);
 	return 0;	# no such file found
+}
+
+
+sub ExpireLRU {
+	my $ttl = shift || (24*60*60);	# default is 24 hours? OK?
+
+	##
+	#	look in root cache dir and get a list of files.
+	##
+	return undef unless defined $G->{'ROOT_DIR'};
+	opendir  DIR, $G->{'ROOT_DIR'} or return undef;
+	my @files = grep !/^\.\.?$/, readdir DIR;
+	closedir DIR;
+
+	##
+	#	examine file list and keep those that haven't been used in a while.
+	##
+	my $now = time;
+	@files = grep {($ttl < ($now-(stat("$G->{'ROOT_DIR'}/$_"))[8]));} @files;
+
+	##
+	#	actually delete these files
+	##
+	unlink map "$G->{'ROOT_DIR'}/$_", @files;
+
+	@files;
 }
 
 
@@ -496,6 +522,25 @@ an occasion where you will want to do this.
 You can also supply a cache file name to this routine to specifically
 nuke a particular cache file.
 
+=item ExpireLRU( [<ttl>] );
+
+	ExpirLRU( [<ttl> = 24*60*60] );
+	  <ttl>       - number of seconds threshold to expire the
+	                least recent used files. Default = 24hrs.
+
+The ExpireLRU() routine lets you delete a set of cache files that have not
+been accessed for some amount of time. You pass the age, in seconds,
+for the threshold to determine whether or not a file should be expired.
+Each cache file's last access time is consulted using (stat($file))[8].
+If the current time minus this time is greater than the threshold, then
+the file is unlinked. This routine returns a list of files that were
+unlinked, which may be undef, if no files were removed.
+
+The cache root directory is the directory that is searched for candidates
+to delete. Recall that you can affect the root directory by calling any of
+SetRoot(), SetFile(), or Start().
+
+
 =back
 
 =head1 BUGS
@@ -510,6 +555,9 @@ If your processes are exiting abnormally, you may have bigger problems,
 or need some signal handling. I'll take suggestions if there is something
 that can be done here.
 
+This code expects path delimiters to be a '/' character, as is with
+unix systems.
+
 Contact bseib@purdue.edu for bug reports and suggestions.
 
 =head1 AUTHOR
@@ -520,7 +568,7 @@ Perl itself.
 
 =head1 REVISION
 
-$Id: Cache.pm,v 1.3 1998/06/18 01:00:46 bseib Exp $
+$Id: Cache.pm,v 1.4 1998/06/26 17:51:53 bseib Exp $
 
 =head1 SEE ALSO
 

@@ -150,6 +150,7 @@ sub {
 
 
 sub {
+	#return 1;
 	fib_to_file("fib.model");
 	cgi_to_file("test.cgi");
 
@@ -193,14 +194,58 @@ sub {
 			}
 		}
 	};
+	unlink "fib.model", "fib.cache", "fib.out", "fib.out2", "test.cgi";
 	if ($@ ne '') {
-		unlink "fib.model", "fib.cache", "fib.out", "fib.out2", "test.cgi";
 		return 0;
 	}
 
-	unlink "fib.model", "fib.cache", "fib.out", "fib.out2", "test.cgi";
 	1;
 },
+
+
+sub {
+	my $tmpdir = "${TMPDIR}2";
+	my $A = 4;
+	my $B = $A + 2;
+	my $S = 2;
+	my $Z = ($S * $A) - 2 + $B;
+
+	$@ = '';
+	eval {
+
+	mkpath($tmpdir);
+
+	my $i, $j;
+	for $i (0..($S-1)) {
+		for $j (0..2) {
+			my $x = $i*3+$j;
+			open  FH, ">$tmpdir/extra.$x" || die "Can't create tmp file. $!\n";
+			print FH "This is a test! ($x)\n";
+			close FH;
+		}
+		sleep $A;
+	}
+
+	sleep $B;
+
+	CGI::Cache::SetRoot($tmpdir) || die "SetRoot() - failed";
+	my @files = CGI::Cache::ExpireLRU(1000);
+	die "ExpireLRU failed by removing when it should not.\n" if scalar(@files);
+
+	@files = CGI::Cache::ExpireLRU($Z);
+	my @answer = qw ( extra.0 extra.1 extra.2 );
+	my $files  = join ':', @files;
+	my $answer = join ':', @answer;
+
+	die "ExpireLRU gave wrong answer.\n" if ($files ne $answer);
+
+	rmtree($tmpdir);
+
+	};
+	return 0 if ($@ ne "");
+	1;
+},
+
 
 
 

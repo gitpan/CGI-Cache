@@ -1,5 +1,8 @@
 Revision history for Perl extension CGI::Cache.
 
+1.00  Thu Jun 25 20:47:30 EST 1998
+	- Added routine ExpireLRU() per suggestion from Daniel LaLiberte.
+
 0.99  Wed Jun 17 20:06:08 EST 1998
 	- Added some modifications to the docs. There is a BUGS
 	  piece of info wrt signals that kill your process and

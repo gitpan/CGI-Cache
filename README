@@ -1,4 +1,4 @@
-CGI::Cache 1.02
+CGI::Cache 1.03
 
 Perl extension to help cache output of time- intensive CGI scripts so that
 subsequent visits to such scripts will not cost as much time.
@@ -12,12 +12,10 @@ install this version.
 
 REVISION SUMMARY
 
-1.02  Mon Nov 13 00:07:24 EST 2000
-  - Fixed issues to make module mod_perl compatible.
-  - Fixed stop() documentation.
-  - Moved development to SourceForge.
-    (http://CGICache.sourceforge.net/)
-
+1.03  Mon Jan 29 21:56:50 EST 2001
+  - Now prevents caching of output for applications which call a $SIG{__DIE__}
+    that doesn't print to STDERR. An example of this type of application is
+    "CGI::Carp qw(fatalsToBrowser)"
 
 INSTALLATION
 

@@ -9,14 +9,15 @@ use File::Spec::Functions qw( tmpdir );
 use File::Cache;
 use Storable qw (freeze);
 
-$VERSION = '1.02';
+$VERSION = '1.03';
 
 # --------------------------------------------------------------------------
 
 # Globals
 use vars qw( $CAPTURE_STARTED $CACHE_KEY $ROOT_DIR $TIME_TO_LIVE $MODE
              $CACHE $CAPTURED_OUTPUT $DEFAULT_CACHE_KEY $CACHE_PATH 
-             $WROTE_TO_STDERR $OLD_STDOUT_TIE $OLD_STDERR_TIE );
+             $WROTE_TO_STDERR $CALLED_WARN_OR_DIE $OLD_STDOUT_TIE
+             $OLD_STDERR_TIE $WARN $DIE );
 
 # 1 indicates that STDOUT is being captured
 $CAPTURE_STARTED = 0;
@@ -50,12 +51,17 @@ $CACHE_PATH = '';
 # Used to determine if there was an error in the script that caused it to
 # write to STDERR
 $WROTE_TO_STDERR = 0;
+$CALLED_WARN_OR_DIE = 0;
 
 # Used to store the old tie'd variables, if any. (Under mod_perl,
 # STDOUT is tie'd to the Apache module.) Undef means that there is no
 # old tie.
 $OLD_STDOUT_TIE = undef;
 $OLD_STDERR_TIE = undef;
+
+# The original warn and die handlers
+$WARN = undef;
+$DIE = undef;
 
 # --------------------------------------------------------------------------
 
@@ -64,13 +70,41 @@ $OLD_STDERR_TIE = undef;
 # will not automatically be called if the script is exiting via a die
 # (detected by $? == 2).
 
+sub warn
+{
+  $CALLED_WARN_OR_DIE = 1;
+
+  if ($WARN ne '')
+  {
+    &$WARN(@_);
+  }
+  else
+  {
+    CORE::warn(@_);
+  }
+}
+
+sub die
+{
+  $CALLED_WARN_OR_DIE = 1;
+
+  if ($DIE ne '')
+  {
+    &$DIE(@_);
+  }
+  else
+  {
+    CORE::die(@_);
+  }
+}
+
 END
 {
   return unless $CAPTURE_STARTED;
 
   # Unfortunately, die() writes to STDERR in a magical way that doesn't allow
   # us to catch it. In this case we check $? for an error code.
-  if ($WROTE_TO_STDERR || $? == 2)
+  if ($CALLED_WARN_OR_DIE || $WROTE_TO_STDERR || $? == 2)
   {
     stop(0);
   }
@@ -78,6 +112,8 @@ END
   {
     stop(1);
   }
+
+  $main::SIG{__DIE__} = $DIE;
 }
 
 # --------------------------------------------------------------------------
@@ -93,6 +129,20 @@ sub setup
   $CACHE = new File::Cache($options);
 
   die "File::Cache::new failed\n" unless defined $CACHE;
+
+  # Store the previous warn() and die() handlers, unless they are ours. (We
+  # don't want to call ourselves if the user calls setup twice!)
+  if ($main::SIG{__WARN__} ne \&CGI::Cache::warn)
+  {
+    $WARN = $main::SIG{__WARN__};
+    $main::SIG{__WARN__} = \&CGI::Cache::warn;
+  }
+
+  if ($main::SIG{__DIE__} ne \&CGI::Cache::die)
+  {
+    $DIE = $main::SIG{__DIE__};
+    $main::SIG{__DIE__} = \&CGI::Cache::die;
+  }
 
   return 1;
 }
@@ -214,6 +264,7 @@ sub stop
   # May be important for mod_perl situations
   $CAPTURED_OUTPUT = '';
   $WROTE_TO_STDERR = 0;
+  $CALLED_WARN_OR_DIE = 0;
 
   1;
 }
@@ -439,6 +490,11 @@ the File::Cache module's new() method, with the same defaults. Below
 is a brief overview of the options and their defaults. This overview
 may be out of date with your version of File::Cache. Consult I<perldoc
 File::Cache> for more accurate information.
+
+NOTE: If you plan to modify warn() or die() (i.e. redefine $SIG{__WARN__} or
+$SIG{__DIE__}) so that they no longer print to STDERR, you must do so before
+calling setup(). For example, if you do a "require CGI::Carp qw(
+fatalsToBrowser)", make sure you do it before calling CGI::Cache::setup().
 
 =over 4
 

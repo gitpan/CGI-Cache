@@ -1,5 +1,9 @@
 Revision history for Perl extension CGI::Cache.
 
+1.40 Tue Nov  5 12:31:17 EST 2002
+- Added clear() function to clear the cache. (Suggested by Adolfo Santiago
+  <chago@anothernet.com>)
+
 1.30 Thu Sep 26 13:01:32 EDT 2002
 - Added enable_output feature. (Feature request from Theo Petersen
   <theo@summitdesign.net>.)

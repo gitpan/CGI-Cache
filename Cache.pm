@@ -9,7 +9,7 @@ use File::Spec::Functions qw( tmpdir );
 use Cache::SizeAwareFileCache;
 use Storable qw( freeze );
 
-$VERSION = '1.30';
+$VERSION = '1.40';
 
 # --------------------------------------------------------------------------
 
@@ -403,6 +403,15 @@ sub _unbind
 sub invalidate_cache_entry
 {
   $THE_CACHE->remove( $THE_CACHE_KEY );
+
+  return 1;
+}
+
+# --------------------------------------------------------------------------
+
+sub clear
+{
+  $CGI::Cache::THE_CACHE->clear();
 
   return 1;
 }
@@ -855,6 +864,11 @@ return value is the contents of the buffer after any changes.
 Forces the cache entry to be invalidated. It is always successful, and always
 returns 1. It doesn't make much sense to call this after calling start(), as
 CGI::Cache will have already determined that the cache entry is invalid.
+
+
+=item $status = clear_cache();
+
+Deletes the cache. It is always successful, and always returns 1.
 
 
 =head1 CGI::Cache and Persistent Environments

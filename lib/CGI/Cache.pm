@@ -3,6 +3,7 @@ package CGI::Cache;
 use strict;
 use vars qw( $VERSION );
 
+use 5.004;
 use File::Path;
 use File::Spec;
 use File::Spec::Functions qw( tmpdir );
@@ -10,7 +11,7 @@ use Cache::SizeAwareFileCache;
 use Tie::Restore;
 use Storable qw( freeze );
 
-$VERSION = sprintf "%d.%02d%02d", q/1.42.0/ =~ /(\d+)/g;
+$VERSION = sprintf "%d.%02d%02d", q/1.42.1/ =~ /(\d+)/g;
 
 # --------------------------------------------------------------------------
 
@@ -528,9 +529,7 @@ sub PRINTF
 
 1;
 
-__END__
-
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 =head1 NAME
 
@@ -1037,25 +1036,27 @@ Here's an example with SpeedyCGI:
 
 No known bugs.
 
-Contact david@coppit.org for bug reports and suggestions.
+Contact the author for bug reports and suggestions.
 
+=head1 LICENSE
+
+This code is distributed under the GNU General Public License (GPL). See the
+file LICENSE in the distribution, http://www.opensource.org/gpl-license.html,
+and http://www.opensource.org/.
 
 =head1 AUTHOR
 
 The original code (written before October 1, 2000) was written by Broc
-Seib, and is copyright (c) 1998 Broc Seib. All rights reserved. 
+Seib, and is copyright (c) 1998 Broc Seib.
 
 The CGI::Cache namespace was donated by Terrance Brannon, who kindly allowed
 the current codebase to replace his.
 
 Maintenance of CGI::Cache is now being done by David Coppit
-(david@coppit.org).
-
-This program is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
+E<lt>david@coppit.orgE<gt>.
 
 =head1 SEE ALSO
 
-Cache::SizeAwareFileCache
+L<Cache::SizeAwareFileCache>
 
 =cut
